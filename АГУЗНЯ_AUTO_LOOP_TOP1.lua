@@ -1,4 +1,4 @@
-﻿--// Jailbreak Bounty Tracker
+--// Jailbreak Bounty Tracker
 --// LocalScript
 --// Помести в StarterPlayerScripts или StarterGui
 
@@ -155,6 +155,66 @@ local teamFilter = {
 	mode = "auto",
 	teamName = nil,
 }
+
+--==================================================
+-- AUTO LOOP TOP-1 В ВЫБРАННОЙ ТИМЕ
+--==================================================
+-- Кнопка работает независимо от наличия цели: если в выбранной тиме
+-- никого нет, режим остаётся включённым и ждёт следующего игрока.
+local autoLoopTop1 = false
+local autoLoopTarget = nil
+local autoLoopToken = 0
+
+local function stopAutoLoopTop1()
+	autoLoopToken += 1
+	autoLoopTarget = nil
+end
+
+local function setAutoLoopTarget(player)
+	autoLoopTarget = player
+end
+
+local function getAutoLoopTarget()
+	if not autoLoopTop1 then
+		return nil
+	end
+
+	local target = autoLoopTarget
+	if target and target.Parent == Players then
+		if teamFilter.mode == "team" then
+			if target.Team and target.Team.Name == teamFilter.teamName then
+				return target
+			end
+		elseif teamFilter.mode == "all" then
+			return target
+		else
+			return target
+		end
+	end
+
+	return nil
+end
+
+local function runAutoLoopTop1()
+	autoLoopToken += 1
+	local token = autoLoopToken
+
+	task.spawn(function()
+		while autoLoopTop1 and token == autoLoopToken do
+			local target = getAutoLoopTarget()
+			local character = LocalPlayer.Character
+			local myRoot = character and character:FindFirstChild("HumanoidRootPart")
+			local targetCharacter = target and target.Character
+			local targetRoot = targetCharacter and targetCharacter:FindFirstChild("HumanoidRootPart")
+
+			if myRoot and targetRoot then
+				myRoot.CFrame = targetRoot.CFrame
+			end
+
+			task.wait(0.15)
+		end
+	end)
+end
 
 -- По этим подстрокам режим "auto" узнаёт тиму преступников
 local CRIMINAL_TEAM_PATTERNS = {
@@ -1345,6 +1405,48 @@ if features.securityButton then
 	JobButtonCorner.Parent = JobButton
 
 	addHover(JobButton, 0.08)
+end
+
+--==================================================
+-- AUTO LOOP TOP-1 BUTTON
+--==================================================
+local AutoLoopButton = nil
+
+if features.securityButton then
+	AutoLoopButton = Instance.new("TextButton")
+	AutoLoopButton.Name = "AutoLoopTop1Button"
+	AutoLoopButton.Size = UDim2.new(0, 48, 0, 24)
+	AutoLoopButton.Position = UDim2.new(1, -105, 0, 34)
+	AutoLoopButton.BackgroundColor3 = COLOR_FIELD
+	AutoLoopButton.Text = "A-LOOP"
+	AutoLoopButton.TextColor3 = COLOR_TEXT
+	AutoLoopButton.Font = Enum.Font.SourceSansBold
+	AutoLoopButton.TextSize = 11
+	AutoLoopButton.BorderSizePixel = 0
+	AutoLoopButton.ZIndex = 2
+	AutoLoopButton.Parent = MainFrame
+
+	local autoLoopCorner = Instance.new("UICorner")
+	autoLoopCorner.CornerRadius = UDim.new(0, 4)
+	autoLoopCorner.Parent = AutoLoopButton
+
+	addHover(AutoLoopButton, 0.08)
+
+	AutoLoopButton.MouseButton1Click:Connect(function()
+		autoLoopTop1 = not autoLoopTop1
+
+		if autoLoopTop1 then
+			AutoLoopButton.Text = "UNLOOP"
+			AutoLoopButton.BackgroundColor3 = COLOR_ON
+			runAutoLoopTop1()
+			-- Сразу пересчитываем TOP-1 для текущей выбранной тимы.
+			task.defer(updateList)
+		else
+			AutoLoopButton.Text = "A-LOOP"
+			AutoLoopButton.BackgroundColor3 = COLOR_FIELD
+			stopAutoLoopTop1()
+		end
+	end)
 end
 
 --==================================================
@@ -3243,6 +3345,17 @@ function updateList()
 			end
 			return a.Capture > b.Capture
 		end)
+
+		-- TOP-1 = первая строка текущей выбранной тимы/фильтра.
+		-- Если список пуст, target становится nil, но AUTO LOOP остаётся включён
+		-- и подхватит следующего игрока при следующем updateList().
+		if autoLoopTop1 then
+			if validPlayers[1] then
+				setAutoLoopTarget(validPlayers[1].Player)
+			else
+				autoLoopTarget = nil
+			end
+		end
 
 		local activeUserIds = {}
 		local rowCount = #validPlayers

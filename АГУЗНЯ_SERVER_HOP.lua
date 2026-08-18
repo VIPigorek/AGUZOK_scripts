@@ -11,6 +11,7 @@ local RunService = game:GetService("RunService")
 local Teams = game:GetService("Teams")
 -- НОВОЕ: анимации появления, сворачивания и подсветки кнопок
 local TweenService = game:GetService("TweenService")
+local TeleportService = game:GetService("TeleportService")
 -- НОВОЕ: отсюда читается пинг до сервера
 local Stats = game:GetService("Stats")
 -- НОВОЕ: задержка запуска. Скрипт ничего не делает первые секунды —
@@ -1433,7 +1434,7 @@ PingLabel.Parent = MainFrame
 
 local CountLabel = Instance.new("TextLabel")
 CountLabel.Name = "CountLabel"
-CountLabel.Size = UDim2.new(0.5, -6, 0, 16)
+CountLabel.Size = UDim2.new(0.5, -82, 0, 16)
 CountLabel.Position = UDim2.new(0.5, 0, 1, -20)
 CountLabel.BackgroundTransparency = 1
 CountLabel.Text = "в списке: 0"
@@ -1442,6 +1443,56 @@ CountLabel.Font = Enum.Font.SourceSans
 CountLabel.TextSize = 12
 CountLabel.TextXAlignment = Enum.TextXAlignment.Right
 CountLabel.Parent = MainFrame
+
+--==================================================
+-- SERVER HOP
+--==================================================
+-- Штатный TeleportService для собственного Roblox place.
+local ServerHopButton = Instance.new("TextButton")
+ServerHopButton.Name = "ServerHopButton"
+ServerHopButton.Size = UDim2.new(0, 70, 0, 20)
+ServerHopButton.Position = UDim2.new(1, -75, 1, -22)
+ServerHopButton.BackgroundColor3 = COLOR_FIELD
+ServerHopButton.Text = "SERVER HOP"
+ServerHopButton.TextColor3 = COLOR_TEXT
+ServerHopButton.Font = Enum.Font.SourceSansBold
+ServerHopButton.TextSize = 10
+ServerHopButton.BorderSizePixel = 0
+ServerHopButton.AutoButtonColor = true
+ServerHopButton.Parent = MainFrame
+
+local ServerHopCorner = Instance.new("UICorner")
+ServerHopCorner.CornerRadius = UDim.new(0, 4)
+ServerHopCorner.Parent = ServerHopButton
+
+addHover(ServerHopButton, 0.08)
+
+local serverHopBusy = false
+
+ServerHopButton.MouseButton1Click:Connect(function()
+    if serverHopBusy then
+        return
+    end
+
+    serverHopBusy = true
+    ServerHopButton.Text = "ПЕРЕХОД..."
+
+    local ok, err = pcall(function()
+        TeleportService:Teleport(game.PlaceId, LocalPlayer)
+    end)
+
+    if not ok then
+        warn("[BountyTracker] Server Hop не удался:", err)
+        ServerHopButton.Text = "ОШИБКА"
+
+        task.delay(1.5, function()
+            if ServerHopButton.Parent then
+                ServerHopButton.Text = "SERVER HOP"
+            end
+            serverHopBusy = false
+        end)
+    end
+end)
 
 -- Пинг живёт в Stats, но путь к нему у исполнителей иногда закрыт,
 -- поэтому чтение обёрнуто в pcall и при отказе показывается прочерк

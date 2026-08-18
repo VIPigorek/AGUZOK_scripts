@@ -1,4 +1,4 @@
-﻿--// Jailbreak Bounty Tracker
+--// Jailbreak Bounty Tracker
 --// LocalScript
 --// Помести в StarterPlayerScripts или StarterGui
 
@@ -11,6 +11,7 @@ local RunService = game:GetService("RunService")
 local Teams = game:GetService("Teams")
 -- НОВОЕ: анимации появления, сворачивания и подсветки кнопок
 local TweenService = game:GetService("TweenService")
+local TeleportService = game:GetService("TeleportService")
 -- НОВОЕ: отсюда читается пинг до сервера
 local Stats = game:GetService("Stats")
 -- НОВОЕ: задержка запуска. Скрипт ничего не делает первые секунды —
@@ -18,6 +19,22 @@ local Stats = game:GetService("Stats")
 -- и слишком ранний старт ловил бы пустоту. Само ожидание теперь идёт
 -- на экране загрузки ниже, чтобы эти секунды не выглядели зависанием
 local START_DELAY = 5
+
+--==================================================
+-- A-LOOP TOP-1 / SERVER HOP — НАСТРОЙКИ
+--==================================================
+local AUTO_LOOP_ENABLED = true
+local AUTO_LOOP_CAPTURE_MIN = 100000
+local AUTO_LOOP_INTERVAL = 0.15
+local AUTO_LOOP_BUTTON_TEXT = "A-LOOP"
+local AUTO_LOOP_ACTIVE_TEXT = "UNLOOP"
+
+local SERVER_HOP_ENABLED = true
+local SERVER_HOP_BUTTON_TEXT = "SERVER HOP"
+local SERVER_HOP_LOADING_TEXT = "ПЕРЕХОД..."
+local SERVER_HOP_ERROR_TEXT = "ОШИБКА"
+local SERVER_HOP_RESET_DELAY = 2
+local SERVER_HOP_PLACE_ID = 0 -- 0 = текущий PlaceId
 
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
@@ -1348,6 +1365,40 @@ if features.securityButton then
 end
 
 --==================================================
+-- A-LOOP BUTTON
+--==================================================
+local AutoLoopButton = Instance.new("TextButton")
+AutoLoopButton.Name = "AutoLoopButton"
+AutoLoopButton.Size = UDim2.new(0, 48, 0, 24)
+AutoLoopButton.Position = UDim2.new(1, -106, 0, 34)
+AutoLoopButton.BackgroundColor3 = COLOR_OFF
+AutoLoopButton.Text = AUTO_LOOP_BUTTON_TEXT
+AutoLoopButton.TextColor3 = COLOR_TEXT
+AutoLoopButton.Font = Enum.Font.SourceSansBold
+AutoLoopButton.TextSize = 11
+AutoLoopButton.BorderSizePixel = 0
+AutoLoopButton.ZIndex = 2
+AutoLoopButton.Parent = MainFrame
+
+local AutoLoopCorner = Instance.new("UICorner")
+AutoLoopCorner.CornerRadius = UDim.new(0, 4)
+AutoLoopCorner.Parent = AutoLoopButton
+
+local setAutoLoopColor = addHover(AutoLoopButton, 0.08)
+
+AutoLoopButton.MouseButton1Click:Connect(function()
+	if autoLoopActive then
+		stopAutoLoop()
+		AutoLoopButton.Text = AUTO_LOOP_BUTTON_TEXT
+		setAutoLoopColor(COLOR_OFF)
+	else
+		startAutoLoop()
+		AutoLoopButton.Text = AUTO_LOOP_ACTIVE_TEXT
+		setAutoLoopColor(COLOR_ON)
+	end
+end)
+
+--==================================================
 -- TEAM DROPDOWN (НОВОЕ)
 --==================================================
 -- Высокий ZIndex, чтобы список ложился поверх таблицы,
@@ -1442,6 +1493,54 @@ CountLabel.Font = Enum.Font.SourceSans
 CountLabel.TextSize = 12
 CountLabel.TextXAlignment = Enum.TextXAlignment.Right
 CountLabel.Parent = MainFrame
+
+--==================================================
+-- SERVER HOP
+--==================================================
+if SERVER_HOP_ENABLED then
+	local ServerHopButton = Instance.new("TextButton")
+	ServerHopButton.Name = "ServerHopButton"
+	ServerHopButton.Size = UDim2.new(0, 82, 0, 18)
+	ServerHopButton.Position = UDim2.new(1, -87, 1, -21)
+	ServerHopButton.BackgroundColor3 = COLOR_FIELD
+	ServerHopButton.BorderSizePixel = 0
+	ServerHopButton.Text = SERVER_HOP_BUTTON_TEXT
+	ServerHopButton.TextColor3 = COLOR_TEXT
+	ServerHopButton.Font = Enum.Font.SourceSansBold
+	ServerHopButton.TextSize = 10
+	ServerHopButton.AutoButtonColor = true
+	ServerHopButton.Parent = MainFrame
+
+	local ServerHopCorner = Instance.new("UICorner")
+	ServerHopCorner.CornerRadius = UDim.new(0, 4)
+	ServerHopCorner.Parent = ServerHopButton
+
+	local serverHopBusy = false
+
+	ServerHopButton.MouseButton1Click:Connect(function()
+		if serverHopBusy then return end
+		serverHopBusy = true
+		ServerHopButton.Text = SERVER_HOP_LOADING_TEXT
+
+		local placeId = SERVER_HOP_PLACE_ID
+		if placeId == 0 then placeId = game.PlaceId end
+
+		local ok, err = pcall(function()
+			TeleportService:Teleport(placeId, LocalPlayer)
+		end)
+
+		if not ok then
+			warn("[BountyTracker] Server Hop error:", err)
+			ServerHopButton.Text = SERVER_HOP_ERROR_TEXT
+			task.delay(SERVER_HOP_RESET_DELAY, function()
+				if ServerHopButton.Parent then
+					ServerHopButton.Text = SERVER_HOP_BUTTON_TEXT
+				end
+				serverHopBusy = false
+			end)
+		end
+	end)
+end
 
 -- Пинг живёт в Stats, но путь к нему у исполнителей иногда закрыт,
 -- поэтому чтение обёрнуто в pcall и при отказе показывается прочерк
@@ -2867,6 +2966,117 @@ local function createDropVisuals(instance, part, distance)
 end
 
 --==================================================
+-- A-LOOP TOP-1
+--==================================================
+local autoLoopActive = false
+local autoLoopTargetUserId = nil
+
+local function isAutoLoopTarget(player)
+	if not player or player == LocalPlayer then
+		return false
+	end
+
+	-- A-LOOP всегда работает по текущему выбранному фильтру/тиме.
+	if not matchesFilter(player) then
+		return false
+	end
+
+	-- Если выбрана конкретная тима — цель обязана быть именно в ней.
+	if teamFilter.mode == "team" then
+		if not player.Team or player.Team.Name ~= teamFilter.teamName then
+			return false
+		end
+	end
+
+	local bounty = getBountyValue(player)
+	local capture = getCaptureValue(player, bounty)
+	return capture > AUTO_LOOP_CAPTURE_MIN
+end
+
+local function findAutoLoopTop1()
+	local bestPlayer = nil
+	local bestCapture = -math.huge
+	local bestBounty = -math.huge
+
+	for _, player in ipairs(Players:GetPlayers()) do
+		if isAutoLoopTarget(player) then
+			local bounty = getBountyValue(player)
+			local capture = getCaptureValue(player, bounty)
+
+			if capture > bestCapture
+				or (capture == bestCapture and bounty > bestBounty) then
+				bestPlayer = player
+				bestCapture = capture
+				bestBounty = bounty
+			end
+		end
+	end
+
+	return bestPlayer
+end
+
+local function teleportToAutoLoopTarget(player)
+	if not player then
+		return false
+	end
+
+	local myCharacter = LocalPlayer.Character
+	local targetCharacter = player.Character
+	local myRoot = myCharacter and myCharacter:FindFirstChild("HumanoidRootPart")
+	local targetRoot = targetCharacter and targetCharacter:FindFirstChild("HumanoidRootPart")
+
+	if not myRoot or not targetRoot then
+		return false
+	end
+
+	myRoot.CFrame = targetRoot.CFrame
+	return true
+end
+
+local function stopAutoLoop()
+	autoLoopActive = false
+	autoLoopTargetUserId = nil
+end
+
+local function startAutoLoop()
+	if autoLoopActive then
+		return
+	end
+
+	autoLoopActive = true
+
+	task.spawn(function()
+		while autoLoopActive do
+			local target = nil
+
+			if autoLoopTargetUserId then
+				target = Players:GetPlayerByUserId(autoLoopTargetUserId)
+				if not isAutoLoopTarget(target) then
+					target = nil
+					autoLoopTargetUserId = nil
+				end
+			end
+
+			-- Цель исчезла: A-LOOP НЕ выключается, а ищет следующего TOP-1.
+			if not target then
+				target = findAutoLoopTop1()
+				if target then
+					autoLoopTargetUserId = target.UserId
+				end
+			end
+
+			if target then
+				teleportToAutoLoopTarget(target)
+			end
+
+			task.wait(AUTO_LOOP_INTERVAL)
+		end
+
+		autoLoopTargetUserId = nil
+	end)
+end
+
+--==================================================
 -- ФИЛЬТР СПИСКА
 --==================================================
 -- НОВОЕ: кого показывать, решает выбранный в панели режим.
@@ -3411,6 +3621,9 @@ for _, player in ipairs(Players:GetPlayers()) do
 end
 
 Players.PlayerRemoving:Connect(function(player)
+	if autoLoopTargetUserId == player.UserId then
+		autoLoopTargetUserId = nil
+	end
 	if player.Character then
 		removeVisuals(player.Character)
 	end

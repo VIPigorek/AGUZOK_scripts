@@ -1,4 +1,4 @@
-﻿--// Jailbreak Bounty Tracker
+--// Jailbreak Bounty Tracker
 --// LocalScript
 --// Помести в StarterPlayerScripts или StarterGui
 
@@ -167,10 +167,19 @@ local CRIMINAL_TEAM_PATTERNS = {
 local AUTO_LABEL = "Авто: преступники"
 local ALL_LABEL = "Все игроки"
 
+--==================================================
+-- НАСТРОЙКИ A-LOOP TOP-1
+--==================================================
+local AUTO_LOOP_ENABLED = true
+local AUTO_LOOP_MIN_CAPTURE = 100000
+local AUTO_LOOP_INTERVAL = 0.20
+local AUTO_LOOP_BUTTON_TEXT = "A-LOOP"
+local AUTO_LOOP_ACTIVE_TEXT = "UNLOOP"
+
 -- Размеры выпадающего списка тим
-local DROPDOWN_ROW_HEIGHT = 24
-local DROPDOWN_ROW_GAP = 2
-local DROPDOWN_MAX_HEIGHT = 156
+local DROPDOWN_ROW_HEIGHT = 20
+local DROPDOWN_ROW_GAP = 1
+local DROPDOWN_MAX_HEIGHT = 110
 
 --==================================================
 -- НАСТРОЙКИ DROP
@@ -298,6 +307,9 @@ local selectedUserId = nil
 -- создаются выше по файлу, чем сама updateList, а замыкание в Lua не увидит
 -- локаль, объявленную после него. Ниже updateList определяется уже без local
 local updateList
+local matchesFilter
+local getCaptureValue
+local getBountyValue
 
 local GUI_NAME = "JailbreakBountyTracker"
 
@@ -986,7 +998,6 @@ if pickedMode == MODE_JAILBREAK then
 	local SpeedKnobCorner = Instance.new("UICorner")
 	SpeedKnobCorner.CornerRadius = UDim.new(1, 0)
 	SpeedKnobCorner.Parent = SpeedKnob
-
 	local AimCircle = Instance.new("Frame")
 	AimCircle.Name = "AimCaptureCircle"
 	AimCircle.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -1269,9 +1280,9 @@ TeamButton.Name = "TeamButton"
 -- кнопки нет и строка занимает всю ширину
 local teamButtonInset = -10
 if features.securityButton then
-	teamButtonInset = -62
+	teamButtonInset = -125
 end
-TeamButton.Size = UDim2.new(1, teamButtonInset, 0, 24)
+TeamButton.Size = UDim2.new(1, teamButtonInset, 0, 20)
 TeamButton.Position = UDim2.new(0, 5, 0, 34)
 TeamButton.BackgroundColor3 = COLOR_FIELD
 TeamButton.AutoButtonColor = true
@@ -1279,7 +1290,7 @@ TeamButton.Text = ""
 TeamButton.TextColor3 = COLOR_TEXT
 TeamButton.TextXAlignment = Enum.TextXAlignment.Left
 TeamButton.Font = Enum.Font.SourceSansBold
-TeamButton.TextSize = 13
+TeamButton.TextSize = 11
 TeamButton.TextTruncate = Enum.TextTruncate.AtEnd
 TeamButton.BorderSizePixel = 0
 TeamButton.ZIndex = 2
@@ -1304,14 +1315,14 @@ TeamButtonPadding.Parent = TeamButton
 
 local TeamArrow = Instance.new("TextLabel")
 TeamArrow.Name = "Arrow"
-TeamArrow.Size = UDim2.new(0, 14, 1, 0)
+TeamArrow.Size = UDim2.new(0, 12, 1, 0)
 -- позиция считается внутри отступов UIPadding, поэтому смещение положительное
 TeamArrow.Position = UDim2.new(1, 4, 0, 0)
 TeamArrow.BackgroundTransparency = 1
 TeamArrow.Text = "\226\150\188"
 TeamArrow.TextColor3 = COLOR_ACCENT
 TeamArrow.Font = Enum.Font.SourceSansBold
-TeamArrow.TextSize = 12
+TeamArrow.TextSize = 10
 TeamArrow.ZIndex = 3
 TeamArrow.Parent = TeamButton
 
@@ -1329,13 +1340,13 @@ local JobButton = nil
 if features.securityButton then
 	JobButton = Instance.new("TextButton")
 	JobButton.Name = "JobButton"
-	JobButton.Size = UDim2.new(0, 48, 0, 24)
+	JobButton.Size = UDim2.new(0, 48, 0, 20)
 	JobButton.Position = UDim2.new(1, -53, 0, 34)
 	JobButton.BackgroundColor3 = Color3.fromRGB(150, 30, 38)
 	JobButton.Text = SHER_TEXT
 	JobButton.TextColor3 = COLOR_TEXT
 	JobButton.Font = Enum.Font.SourceSansBold
-	JobButton.TextSize = 12
+	JobButton.TextSize = 11
 	JobButton.BorderSizePixel = 0
 	JobButton.ZIndex = 2
 	JobButton.Parent = MainFrame
@@ -1348,6 +1359,116 @@ if features.securityButton then
 end
 
 --==================================================
+-- A-LOOP TOP-1
+--==================================================
+local AutoLoopButton = nil
+local autoLoopRunning = false
+local autoLoopTargetUserId = nil
+
+local function stopAutoLoop()
+	autoLoopRunning = false
+	autoLoopTargetUserId = nil
+	if AutoLoopButton and AutoLoopButton.Parent then
+		AutoLoopButton.Text = AUTO_LOOP_BUTTON_TEXT
+		AutoLoopButton.BackgroundColor3 = COLOR_FIELD
+	end
+end
+
+local function getAutoLoopTarget()
+	local bestPlayer = nil
+	local bestCapture = -1
+	local bestBounty = -1
+
+	for _, player in ipairs(Players:GetPlayers()) do
+		if player ~= LocalPlayer and matchesFilter(player) then
+			local capture = getCaptureValue(player, getBountyValue(player))
+			local bounty = getBountyValue(player)
+			if capture > AUTO_LOOP_MIN_CAPTURE then
+				if capture > bestCapture
+					or (capture == bestCapture and bounty > bestBounty) then
+					bestPlayer = player
+					bestCapture = capture
+					bestBounty = bounty
+				end
+			end
+		end
+	end
+
+	return bestPlayer
+end
+
+local function startAutoLoop()
+	if autoLoopRunning then
+		return
+	end
+
+	autoLoopRunning = true
+	AutoLoopButton.Text = AUTO_LOOP_ACTIVE_TEXT
+	AutoLoopButton.BackgroundColor3 = COLOR_ON
+
+	task.spawn(function()
+		while autoLoopRunning do
+			local target = nil
+			if autoLoopTargetUserId then
+				target = Players:GetPlayerByUserId(autoLoopTargetUserId)
+			end
+
+			-- Если старой цели больше нет или она больше не подходит
+			-- выбранной тиме/порогу — ищем новый TOP-1.
+			if not target
+				or not target.Parent
+				or not matchesFilter(target)
+				or getCaptureValue(target, getBountyValue(target)) <= AUTO_LOOP_MIN_CAPTURE then
+				target = getAutoLoopTarget()
+				autoLoopTargetUserId = target and target.UserId or nil
+			end
+
+			if target then
+				local myCharacter = LocalPlayer.Character
+				local targetCharacter = target.Character
+				local myRoot = myCharacter and myCharacter:FindFirstChild("HumanoidRootPart")
+				local targetRoot = targetCharacter and targetCharacter:FindFirstChild("HumanoidRootPart")
+
+				if myRoot and targetRoot then
+					myRoot.CFrame = targetRoot.CFrame
+				end
+			end
+
+			task.wait(AUTO_LOOP_INTERVAL)
+		end
+	end)
+end
+
+if AUTO_LOOP_ENABLED then
+	AutoLoopButton = Instance.new("TextButton")
+	AutoLoopButton.Name = "AutoLoopButton"
+	AutoLoopButton.Size = UDim2.new(0, 62, 0, 20)
+	AutoLoopButton.Position = UDim2.new(1, -120, 0, 34)
+	AutoLoopButton.BackgroundColor3 = COLOR_FIELD
+	AutoLoopButton.BorderSizePixel = 0
+	AutoLoopButton.Text = AUTO_LOOP_BUTTON_TEXT
+	AutoLoopButton.TextColor3 = COLOR_TEXT
+	AutoLoopButton.Font = Enum.Font.SourceSansBold
+	AutoLoopButton.TextSize = 10
+	AutoLoopButton.ZIndex = 2
+	AutoLoopButton.Parent = MainFrame
+
+	local AutoLoopCorner = Instance.new("UICorner")
+	AutoLoopCorner.CornerRadius = UDim.new(0, 4)
+	AutoLoopCorner.Parent = AutoLoopButton
+
+	addHover(AutoLoopButton, 0.08)
+
+	AutoLoopButton.MouseButton1Click:Connect(function()
+		if autoLoopRunning then
+			stopAutoLoop()
+		else
+			startAutoLoop()
+		end
+	end)
+end
+
+--==================================================
 -- TEAM DROPDOWN (НОВОЕ)
 --==================================================
 -- Высокий ZIndex, чтобы список ложился поверх таблицы,
@@ -1356,7 +1477,7 @@ local TeamDropdown = Instance.new("ScrollingFrame")
 TeamDropdown.Name = "TeamDropdown"
 -- НОВОЕ: высота нулевая, список раскрывается анимацией при нажатии
 TeamDropdown.Size = UDim2.new(1, -10, 0, 0)
-TeamDropdown.Position = UDim2.new(0, 5, 0, 60)
+TeamDropdown.Position = UDim2.new(0, 5, 0, 55)
 TeamDropdown.BackgroundColor3 = COLOR_FIELD
 TeamDropdown.BorderSizePixel = 0
 TeamDropdown.CanvasSize = UDim2.new(0, 0, 0, 0)
@@ -1390,8 +1511,8 @@ local ScrollingFrame = Instance.new("ScrollingFrame")
 ScrollingFrame.Name = "PlayerList"
 -- НОВОЕ: список сдвинут вниз, чтобы не залезать на кнопку выбора тимы,
 -- и укорочен снизу под строку с пингом
-ScrollingFrame.Size = UDim2.new(1, -10, 1, -88)
-ScrollingFrame.Position = UDim2.new(0, 5, 0, 63)
+ScrollingFrame.Size = UDim2.new(1, -10, 1, -83)
+ScrollingFrame.Position = UDim2.new(0, 5, 0, 58)
 ScrollingFrame.BackgroundTransparency = 1
 ScrollingFrame.BorderSizePixel = 0
 ScrollingFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
@@ -2644,7 +2765,7 @@ local function dumpGameModules()
 	print("[BountyTracker] --- конец дампа ---")
 end
 
-local function getBountyValue(player)
+getBountyValue = function(player)
 	-- НОВОЕ: точное значение из модулей игры
 	local fromModule = getModuleBounty(player)
 	if fromModule then
@@ -2672,7 +2793,7 @@ local function getRobberyCount(player)
 	return getStat(player, "Robberies", ROBBERY_PATTERNS)
 end
 
-local function getCaptureValue(player, bounty)
+getCaptureValue = function(player, bounty)
 	-- НОВОЕ: выплата за арест из констант игры, если она там прописана
 	local fromModule = getModuleCapture(player)
 	if fromModule then
@@ -2871,7 +2992,7 @@ end
 --==================================================
 -- НОВОЕ: кого показывать, решает выбранный в панели режим.
 -- Раньше это была жёстко зашитая isCriminal
-local function matchesFilter(player)
+matchesFilter = function(player)
 	if player == LocalPlayer then
 		return false
 	end
@@ -3636,6 +3757,457 @@ local function queueAfterTeleport()
 		"автозапуска после смены сервера не будет"
 	)
 	return false
+end
+
+--==================================================
+-- SUSPENSION EDITOR
+-- Отдельное окно в стиле Агузни
+--==================================================
+
+
+if pickedMode == MODE_DRIVE_EMPIRE then
+local SUSPENSION_GUI_NAME = "AguznyaSuspensionEditor"
+
+local oldSuspensionGui = PlayerGui:FindFirstChild(SUSPENSION_GUI_NAME)
+if oldSuspensionGui then
+	oldSuspensionGui:Destroy()
+end
+
+local SuspensionGui = Instance.new("ScreenGui")
+SuspensionGui.Name = SUSPENSION_GUI_NAME
+SuspensionGui.ResetOnSpawn = false
+SuspensionGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+SuspensionGui.Parent = PlayerGui
+
+local SuspensionFrame = Instance.new("Frame")
+SuspensionFrame.Name = "SuspensionFrame"
+SuspensionFrame.Size = UDim2.new(0, 300, 0, 390)
+SuspensionFrame.Position = UDim2.new(0.35, 0, 0.3, 0)
+SuspensionFrame.BackgroundColor3 = COLOR_BG
+SuspensionFrame.BorderSizePixel = 0
+SuspensionFrame.Active = true
+SuspensionFrame.Parent = SuspensionGui
+
+local SuspensionStroke = Instance.new("UIStroke")
+SuspensionStroke.Color = COLOR_EDGE
+SuspensionStroke.Thickness = 1
+SuspensionStroke.Parent = SuspensionFrame
+
+local SuspensionCorner = Instance.new("UICorner")
+SuspensionCorner.CornerRadius = UDim.new(0, 8)
+SuspensionCorner.Parent = SuspensionFrame
+
+local SuspensionTitle = Instance.new("TextLabel")
+SuspensionTitle.Size = UDim2.new(1, -45, 0, 30)
+SuspensionTitle.Position = UDim2.new(0, 5, 0, 0)
+SuspensionTitle.BackgroundColor3 = COLOR_HEADER
+SuspensionTitle.Text = " ПОДВЕСКА"
+SuspensionTitle.TextColor3 = COLOR_TEXT
+SuspensionTitle.TextXAlignment = Enum.TextXAlignment.Left
+SuspensionTitle.Font = Enum.Font.SourceSansBold
+SuspensionTitle.TextSize = 16
+SuspensionTitle.BorderSizePixel = 0
+SuspensionTitle.Parent = SuspensionFrame
+
+local SuspensionTitleCorner = Instance.new("UICorner")
+SuspensionTitleCorner.CornerRadius = UDim.new(0, 8)
+SuspensionTitleCorner.Parent = SuspensionTitle
+
+local SuspensionUnderline = Instance.new("Frame")
+SuspensionUnderline.Size = UDim2.new(1, -10, 0, 1)
+SuspensionUnderline.Position = UDim2.new(0, 5, 0, 31)
+SuspensionUnderline.BackgroundColor3 = COLOR_ACCENT
+SuspensionUnderline.BackgroundTransparency = 0.35
+SuspensionUnderline.BorderSizePixel = 0
+SuspensionUnderline.Parent = SuspensionFrame
+
+local SuspensionClose = Instance.new("TextButton")
+SuspensionClose.Size = UDim2.new(0, 28, 0, 22)
+SuspensionClose.Position = UDim2.new(1, -33, 0, 4)
+SuspensionClose.BackgroundColor3 = COLOR_OFF
+SuspensionClose.Text = "X"
+SuspensionClose.TextColor3 = COLOR_TEXT
+SuspensionClose.Font = Enum.Font.SourceSansBold
+SuspensionClose.TextSize = 12
+SuspensionClose.BorderSizePixel = 0
+SuspensionClose.Parent = SuspensionFrame
+
+local SuspensionCloseCorner = Instance.new("UICorner")
+SuspensionCloseCorner.CornerRadius = UDim.new(0, 4)
+SuspensionCloseCorner.Parent = SuspensionClose
+addHover(SuspensionClose, 0.08)
+
+SuspensionClose.MouseButton1Click:Connect(function()
+	SuspensionFrame.Visible = false
+end)
+
+-- Перетаскивание окна за заголовок
+local suspensionDragging = false
+local suspensionDragStart
+local suspensionStartPosition
+
+SuspensionTitle.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		suspensionDragging = true
+		suspensionDragStart = input.Position
+		suspensionStartPosition = SuspensionFrame.Position
+	end
+end)
+
+SuspensionTitle.InputEnded:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		suspensionDragging = false
+	end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+	if suspensionDragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+		local delta = input.Position - suspensionDragStart
+		SuspensionFrame.Position = UDim2.new(
+			suspensionStartPosition.X.Scale,
+			suspensionStartPosition.X.Offset + delta.X,
+			suspensionStartPosition.Y.Scale,
+			suspensionStartPosition.Y.Offset + delta.Y
+		)
+	end
+end)
+
+-- Кнопка повторного открытия: RightShift
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if gameProcessed then return end
+	if input.KeyCode == Enum.KeyCode.RightShift then
+		SuspensionFrame.Visible = not SuspensionFrame.Visible
+	end
+end)
+
+local suspensionMode = "All"
+local suspensionButtons = {}
+local suspensionSliders = {}
+
+local suspensionRanges = {
+	Damping = {Min = 0, Max = 5000, Decimals = 0},
+	FreeLength = {Min = 0, Max = 10, Decimals = 2},
+	MaxForce = {Min = 0, Max = 100000, Decimals = 0},
+	Stiffness = {Min = 0, Max = 100000, Decimals = 0},
+}
+
+local function getSuspensionSprings()
+	local vehicles = Workspace:FindFirstChild("Vehicles")
+	if not vehicles then return nil end
+
+	local vehicle = vehicles:FindFirstChild(LocalPlayer.Name)
+	if not vehicle then return nil end
+
+	local constraints = vehicle:FindFirstChild("Constraints")
+	if not constraints then return nil end
+
+	return {
+		FrontLeft = constraints:FindFirstChild("FLSpring"),
+		FrontRight = constraints:FindFirstChild("FRSpring"),
+		RearLeft = constraints:FindFirstChild("RLSpring"),
+		RearRight = constraints:FindFirstChild("RRSpring"),
+	}
+end
+
+local function getSelectedSuspensionSprings()
+	local springs = getSuspensionSprings()
+	if not springs then return {} end
+
+	if suspensionMode == "Front" then
+		return {springs.FrontLeft, springs.FrontRight}
+	elseif suspensionMode == "Rear" then
+		return {springs.RearLeft, springs.RearRight}
+	end
+
+	return {
+		springs.FrontLeft,
+		springs.FrontRight,
+		springs.RearLeft,
+		springs.RearRight,
+	}
+end
+
+local function formatSuspensionNumber(value, decimals)
+	if decimals == 0 then
+		return tostring(math.floor(value + 0.5))
+	end
+	return string.format("%." .. decimals .. "f", value)
+end
+
+-- Выбор: ПЕРЕД / ЗАД / ПОЛНОСТЬЮ
+local suspensionTabs = Instance.new("Frame")
+suspensionTabs.Size = UDim2.new(1, -10, 0, 30)
+suspensionTabs.Position = UDim2.new(0, 5, 0, 38)
+suspensionTabs.BackgroundTransparency = 1
+suspensionTabs.Parent = SuspensionFrame
+
+local suspensionTabLayout = Instance.new("UIListLayout")
+suspensionTabLayout.FillDirection = Enum.FillDirection.Horizontal
+suspensionTabLayout.Padding = UDim.new(0, 4)
+suspensionTabLayout.Parent = suspensionTabs
+
+local function updateSuspensionTabs()
+	for mode, button in pairs(suspensionButtons) do
+		if mode == suspensionMode then
+			button.BackgroundColor3 = COLOR_ACCENT
+		else
+			button.BackgroundColor3 = COLOR_FIELD
+		end
+	end
+end
+
+for _, modeData in ipairs({
+	{Name = "Front", Text = "ПЕРЕД"},
+	{Name = "Rear", Text = "ЗАД"},
+	{Name = "All", Text = "4 КОЛЕСА"},
+}) do
+	local button = Instance.new("TextButton")
+	button.Name = modeData.Name
+	button.Size = UDim2.new(1 / 3, -3, 1, 0)
+	button.BackgroundColor3 = COLOR_FIELD
+	button.Text = modeData.Text
+	button.TextColor3 = COLOR_TEXT
+	button.Font = Enum.Font.SourceSansBold
+	button.TextSize = 11
+	button.BorderSizePixel = 0
+	button.Parent = suspensionTabs
+
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 4)
+	corner.Parent = button
+
+	addHover(button, 0.06)
+	suspensionButtons[modeData.Name] = button
+
+	button.MouseButton1Click:Connect(function()
+		suspensionMode = modeData.Name
+		updateSuspensionTabs()
+	end)
+end
+
+updateSuspensionTabs()
+
+local function createSuspensionSlider(property, y)
+	local range = suspensionRanges[property]
+
+	local container = Instance.new("Frame")
+	container.Name = property
+	container.Size = UDim2.new(1, -20, 0, 62)
+	container.Position = UDim2.new(0, 10, 0, y)
+	container.BackgroundTransparency = 1
+	container.Parent = SuspensionFrame
+
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.new(0.6, 0, 0, 18)
+	label.BackgroundTransparency = 1
+	label.Text = property
+	label.TextColor3 = COLOR_TEXT
+	label.Font = Enum.Font.SourceSansBold
+	label.TextSize = 13
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.Parent = container
+
+	local valueLabel = Instance.new("TextLabel")
+	valueLabel.Size = UDim2.new(0.4, 0, 0, 18)
+	valueLabel.Position = UDim2.new(0.6, 0, 0, 0)
+	valueLabel.BackgroundTransparency = 1
+	valueLabel.TextColor3 = COLOR_MONEY
+	valueLabel.Font = Enum.Font.SourceSansBold
+	valueLabel.TextSize = 13
+	valueLabel.TextXAlignment = Enum.TextXAlignment.Right
+	valueLabel.Parent = container
+
+	local bar = Instance.new("Frame")
+	bar.Size = UDim2.new(1, 0, 0, 7)
+	bar.Position = UDim2.new(0, 0, 0, 28)
+	bar.BackgroundColor3 = COLOR_FIELD
+	bar.BorderSizePixel = 0
+	bar.Active = true
+	bar.Parent = container
+
+	local barCorner = Instance.new("UICorner")
+	barCorner.CornerRadius = UDim.new(1, 0)
+	barCorner.Parent = bar
+
+	local fill = Instance.new("Frame")
+	fill.Size = UDim2.new(0, 0, 1, 0)
+	fill.BackgroundColor3 = COLOR_ACCENT
+	fill.BorderSizePixel = 0
+	fill.Parent = bar
+
+	local fillCorner = Instance.new("UICorner")
+	fillCorner.CornerRadius = UDim.new(1, 0)
+	fillCorner.Parent = fill
+
+	local knob = Instance.new("TextButton")
+	knob.Size = UDim2.new(0, 16, 0, 16)
+	knob.AnchorPoint = Vector2.new(0.5, 0.5)
+	knob.Position = UDim2.new(0, 0, 0.5, 0)
+	knob.BackgroundColor3 = COLOR_TEXT
+	knob.Text = ""
+	knob.AutoButtonColor = false
+	knob.BorderSizePixel = 0
+	knob.Parent = bar
+
+	local knobCorner = Instance.new("UICorner")
+	knobCorner.CornerRadius = UDim.new(1, 0)
+	knobCorner.Parent = knob
+
+	local currentValue = range.Min
+	local dragging = false
+
+	local function setValue(value)
+		value = math.clamp(value, range.Min, range.Max)
+
+		if range.Decimals == 0 then
+			value = math.floor(value + 0.5)
+		else
+			local multiplier = 10 ^ range.Decimals
+			value = math.floor(value * multiplier + 0.5) / multiplier
+		end
+
+		currentValue = value
+
+		local percent = 0
+		if range.Max ~= range.Min then
+			percent = (value - range.Min) / (range.Max - range.Min)
+		end
+
+		fill.Size = UDim2.new(percent, 0, 1, 0)
+		knob.Position = UDim2.new(percent, 0, 0.5, 0)
+		valueLabel.Text = formatSuspensionNumber(value, range.Decimals)
+
+		for _, spring in ipairs(getSelectedSuspensionSprings()) do
+			if spring and spring:IsA("SpringConstraint") then
+				pcall(function()
+					spring[property] = value
+				end)
+			end
+		end
+	end
+
+	local function updateFromMouse(mouseX)
+		local width = bar.AbsoluteSize.X
+		if width <= 0 then return end
+
+		local percent = math.clamp(
+			(mouseX - bar.AbsolutePosition.X) / width,
+			0,
+			1
+		)
+
+		setValue(range.Min + (range.Max - range.Min) * percent)
+	end
+
+	knob.MouseButton1Down:Connect(function()
+		dragging = true
+	end)
+
+	bar.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+			dragging = true
+			updateFromMouse(input.Position.X)
+		end
+	end)
+
+	UserInputService.InputChanged:Connect(function(input)
+		if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+			updateFromMouse(input.Position.X)
+		end
+	end)
+
+	UserInputService.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+			dragging = false
+		end
+	end)
+
+	suspensionSliders[property] = {
+		SetValue = setValue,
+		GetValue = function()
+			return currentValue
+		end,
+	}
+end
+
+createSuspensionSlider("Damping", 78)
+createSuspensionSlider("FreeLength", 140)
+createSuspensionSlider("MaxForce", 202)
+createSuspensionSlider("Stiffness", 264)
+
+local suspensionRefresh = Instance.new("TextButton")
+suspensionRefresh.Size = UDim2.new(1, -20, 0, 26)
+suspensionRefresh.Position = UDim2.new(0, 10, 0, 335)
+suspensionRefresh.BackgroundColor3 = COLOR_FIELD
+suspensionRefresh.Text = "ОБНОВИТЬ"
+suspensionRefresh.TextColor3 = COLOR_TEXT
+suspensionRefresh.Font = Enum.Font.SourceSansBold
+suspensionRefresh.TextSize = 12
+suspensionRefresh.BorderSizePixel = 0
+suspensionRefresh.Parent = SuspensionFrame
+
+local suspensionRefreshCorner = Instance.new("UICorner")
+suspensionRefreshCorner.CornerRadius = UDim.new(0, 4)
+suspensionRefreshCorner.Parent = suspensionRefresh
+addHover(suspensionRefresh, 0.06)
+
+local suspensionStatus = Instance.new("TextLabel")
+suspensionStatus.Size = UDim2.new(1, -20, 0, 20)
+suspensionStatus.Position = UDim2.new(0, 10, 0, 365)
+suspensionStatus.BackgroundTransparency = 1
+suspensionStatus.Text = "FLSpring • FRSpring • RLSpring • RRSpring"
+suspensionStatus.TextColor3 = COLOR_TEXT_DIM
+suspensionStatus.Font = Enum.Font.SourceSans
+suspensionStatus.TextSize = 10
+suspensionStatus.TextXAlignment = Enum.TextXAlignment.Left
+suspensionStatus.TextTruncate = Enum.TextTruncate.AtEnd
+suspensionStatus.Parent = SuspensionFrame
+
+local function loadSuspensionValues()
+	local springs = getSuspensionSprings()
+	if not springs then
+		suspensionStatus.Text = "Машина или Constraints не найдены"
+		return
+	end
+
+	local selected = getSelectedSuspensionSprings()
+	local firstSpring = nil
+
+	for _, spring in ipairs(selected) do
+		if spring and spring:IsA("SpringConstraint") then
+			firstSpring = spring
+			break
+		end
+	end
+
+	if not firstSpring then
+		suspensionStatus.Text = "SpringConstraint не найден"
+		return
+	end
+
+	for property, slider in pairs(suspensionSliders) do
+		local ok, value = pcall(function()
+			return firstSpring[property]
+		end)
+
+		if ok and typeof(value) == "number" then
+			slider.SetValue(value)
+		end
+	end
+
+	suspensionStatus.Text = "Подвеска подключена • " .. suspensionMode
+end
+
+suspensionRefresh.MouseButton1Click:Connect(loadSuspensionValues)
+
+for _, button in pairs(suspensionButtons) do
+	button.MouseButton1Click:Connect(function()
+		task.defer(loadSuspensionValues)
+	end)
+end
+
+-- Открытие окна по клавише RightShift даже после закрытия крестиком.
+loadSuspensionValues()
 end
 
 --==================================================

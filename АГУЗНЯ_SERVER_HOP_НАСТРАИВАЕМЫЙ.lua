@@ -1,4 +1,4 @@
-﻿--// Jailbreak Bounty Tracker
+--// Jailbreak Bounty Tracker
 --// LocalScript
 --// Помести в StarterPlayerScripts или StarterGui
 
@@ -11,6 +11,7 @@ local RunService = game:GetService("RunService")
 local Teams = game:GetService("Teams")
 -- НОВОЕ: анимации появления, сворачивания и подсветки кнопок
 local TweenService = game:GetService("TweenService")
+local TeleportService = game:GetService("TeleportService")
 -- НОВОЕ: отсюда читается пинг до сервера
 local Stats = game:GetService("Stats")
 -- НОВОЕ: задержка запуска. Скрипт ничего не делает первые секунды —
@@ -18,6 +19,18 @@ local Stats = game:GetService("Stats")
 -- и слишком ранний старт ловил бы пустоту. Само ожидание теперь идёт
 -- на экране загрузки ниже, чтобы эти секунды не выглядели зависанием
 local START_DELAY = 5
+
+--==================================================
+-- SERVER HOP — НАСТРОЙКИ
+--==================================================
+local SERVER_HOP_ENABLED = true
+local SERVER_HOP_BUTTON_TEXT = "SERVER HOP"
+local SERVER_HOP_LOADING_TEXT = "ПЕРЕХОД..."
+local SERVER_HOP_ERROR_TEXT = "ОШИБКА"
+local SERVER_HOP_RESET_DELAY = 2
+-- Если нужен другой place в твоём проекте — укажи его PlaceId.
+-- 0 = текущий place.
+local SERVER_HOP_PLACE_ID = 0
 
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
@@ -1442,6 +1455,60 @@ CountLabel.Font = Enum.Font.SourceSans
 CountLabel.TextSize = 12
 CountLabel.TextXAlignment = Enum.TextXAlignment.Right
 CountLabel.Parent = MainFrame
+
+--==================================================
+-- SERVER HOP
+--==================================================
+if SERVER_HOP_ENABLED then
+	local ServerHopButton = Instance.new("TextButton")
+	ServerHopButton.Name = "ServerHopButton"
+	ServerHopButton.Size = UDim2.new(0, 82, 0, 18)
+	ServerHopButton.Position = UDim2.new(0, 8, 1, -21)
+	ServerHopButton.BackgroundColor3 = COLOR_FIELD
+	ServerHopButton.BorderSizePixel = 0
+	ServerHopButton.Text = SERVER_HOP_BUTTON_TEXT
+	ServerHopButton.TextColor3 = COLOR_TEXT
+	ServerHopButton.Font = Enum.Font.SourceSansBold
+	ServerHopButton.TextSize = 11
+	ServerHopButton.AutoButtonColor = true
+	ServerHopButton.Parent = MainFrame
+
+	local ServerHopCorner = Instance.new("UICorner")
+	ServerHopCorner.CornerRadius = UDim.new(0, 4)
+	ServerHopCorner.Parent = ServerHopButton
+
+	local serverHopBusy = false
+
+	ServerHopButton.MouseButton1Click:Connect(function()
+		if serverHopBusy then
+			return
+		end
+
+		serverHopBusy = true
+		ServerHopButton.Text = SERVER_HOP_LOADING_TEXT
+
+		local placeId = SERVER_HOP_PLACE_ID
+		if placeId == 0 then
+			placeId = game.PlaceId
+		end
+
+		local ok, err = pcall(function()
+			TeleportService:Teleport(placeId, LocalPlayer)
+		end)
+
+		if not ok then
+			warn("[BountyTracker] Server Hop error:", err)
+			ServerHopButton.Text = SERVER_HOP_ERROR_TEXT
+
+			task.delay(SERVER_HOP_RESET_DELAY, function()
+				if ServerHopButton.Parent then
+					ServerHopButton.Text = SERVER_HOP_BUTTON_TEXT
+				end
+				serverHopBusy = false
+			end)
+		end
+	end)
+end
 
 -- Пинг живёт в Stats, но путь к нему у исполнителей иногда закрыт,
 -- поэтому чтение обёрнуто в pcall и при отказе показывается прочерк

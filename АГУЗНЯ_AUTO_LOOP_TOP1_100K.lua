@@ -115,6 +115,15 @@ local CAPTURE_PERCENT = 0.5
 -- такой же, как у строки дропа: жирную цель видно сразу
 local BIG_CAPTURE_VALUE = 1000000
 
+-- AUTO LOOP TOP-1: телепорт только к цели, если её ценность
+-- (цена за поимку / Capture) строго больше этого значения.
+local AUTO_LOOP_MIN_VALUE = 100000
+
+-- AUTO LOOP TOP-1: режим остаётся включённым и ждёт следующую подходящую цель.
+local autoLoopTop1 = false
+local autoLoopTarget = nil
+local autoLoopToken = 0
+
 -- НОВОЕ: столько секунд до конца розыска таймер горит красным
 local WANTED_SOON = 15
 
@@ -293,6 +302,40 @@ end
 -- Объявлено здесь намеренно: createLine ниже читает эту переменную,
 -- а в Lua обращение к локали, объявленной позже, молча вернёт nil
 local selectedUserId = nil
+
+local function stopAutoLoopTop1()
+	autoLoopToken += 1
+	autoLoopTarget = nil
+end
+
+local function setAutoLoopTarget(player)
+	autoLoopTarget = player
+end
+
+local function runAutoLoopTop1()
+	autoLoopToken += 1
+	local token = autoLoopToken
+
+	task.spawn(function()
+		while autoLoopTop1 and token == autoLoopToken do
+			local target = autoLoopTarget
+			local targetValid = target and target.Parent == Players
+
+			if targetValid then
+				local character = LocalPlayer.Character
+				local targetCharacter = target.Character
+				local myRoot = character and character:FindFirstChild("HumanoidRootPart")
+				local targetRoot = targetCharacter and targetCharacter:FindFirstChild("HumanoidRootPart")
+
+				if myRoot and targetRoot then
+					myRoot.CFrame = targetRoot.CFrame
+				end
+			end
+
+			task.wait(0.15)
+		end
+	end)
+end
 
 -- НОВОЕ: предварительное объявление. Обработчики выпадающего списка тим
 -- создаются выше по файлу, чем сама updateList, а замыкание в Lua не увидит
@@ -1269,7 +1312,8 @@ TeamButton.Name = "TeamButton"
 -- кнопки нет и строка занимает всю ширину
 local teamButtonInset = -10
 if features.securityButton then
-	teamButtonInset = -62
+	-- оставляем место под ШЕР и A-LOOP
+	teamButtonInset = -128
 end
 TeamButton.Size = UDim2.new(1, teamButtonInset, 0, 24)
 TeamButton.Position = UDim2.new(0, 5, 0, 34)
@@ -1346,6 +1390,47 @@ if features.securityButton then
 
 	addHover(JobButton, 0.08)
 end
+
+--==================================================
+-- AUTO LOOP TOP-1
+--==================================================
+local AutoLoopButton = Instance.new("TextButton")
+AutoLoopButton.Name = "AutoLoopButton"
+AutoLoopButton.Size = UDim2.new(0, 64, 0, 24)
+if features.securityButton then
+	AutoLoopButton.Position = UDim2.new(1, -122, 0, 34)
+else
+	AutoLoopButton.Position = UDim2.new(1, -69, 0, 34)
+end
+AutoLoopButton.BackgroundColor3 = COLOR_FIELD
+AutoLoopButton.Text = "A-LOOP"
+AutoLoopButton.TextColor3 = COLOR_TEXT
+AutoLoopButton.Font = Enum.Font.SourceSansBold
+AutoLoopButton.TextSize = 11
+AutoLoopButton.BorderSizePixel = 0
+AutoLoopButton.ZIndex = 2
+AutoLoopButton.Parent = MainFrame
+
+local AutoLoopCorner = Instance.new("UICorner")
+AutoLoopCorner.CornerRadius = UDim.new(0, 4)
+AutoLoopCorner.Parent = AutoLoopButton
+
+addHover(AutoLoopButton, 0.08)
+
+AutoLoopButton.MouseButton1Click:Connect(function()
+	autoLoopTop1 = not autoLoopTop1
+
+	if autoLoopTop1 then
+		AutoLoopButton.Text = "UNLOOP"
+		AutoLoopButton.BackgroundColor3 = COLOR_ON
+		runAutoLoopTop1()
+		task.defer(updateList)
+	else
+		stopAutoLoopTop1()
+		AutoLoopButton.Text = "A-LOOP"
+		AutoLoopButton.BackgroundColor3 = COLOR_FIELD
+	end
+end)
 
 --==================================================
 -- TEAM DROPDOWN (НОВОЕ)
@@ -3243,6 +3328,17 @@ function updateList()
 			end
 			return a.Capture > b.Capture
 		end)
+
+		-- AUTO LOOP TOP-1: берём только первую цель с ценностью строго выше 100000.
+		-- Если подходящей цели нет, AUTO LOOP остаётся включён и просто ждёт.
+		if autoLoopTop1 then
+			local top = validPlayers[1]
+			if top and top.Capture > AUTO_LOOP_MIN_VALUE then
+				setAutoLoopTarget(top.Player)
+			else
+				autoLoopTarget = nil
+			end
+		end
 
 		local activeUserIds = {}
 		local rowCount = #validPlayers

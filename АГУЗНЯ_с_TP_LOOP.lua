@@ -294,6 +294,34 @@ end
 -- а в Lua обращение к локали, объявленной позже, молча вернёт nil
 local selectedUserId = nil
 
+-- TP / LOOPGOTO
+local loopGotoPlayers = {}
+
+local function stopLoopGoto(userId)
+    loopGotoPlayers[userId] = nil
+end
+
+local function startLoopGoto(targetPlayer)
+    local userId = targetPlayer.UserId
+    loopGotoPlayers[userId] = true
+
+    task.spawn(function()
+        while loopGotoPlayers[userId] do
+            if not targetPlayer.Parent then break end
+            local myCharacter = LocalPlayer.Character
+            local targetCharacter = targetPlayer.Character
+            local myRoot = myCharacter and myCharacter:FindFirstChild("HumanoidRootPart")
+            local targetRoot = targetCharacter and targetCharacter:FindFirstChild("HumanoidRootPart")
+            if myRoot and targetRoot then
+                myRoot.CFrame = targetRoot.CFrame
+            end
+            task.wait(0.15)
+        end
+        loopGotoPlayers[userId] = nil
+    end)
+end
+
+
 -- НОВОЕ: предварительное объявление. Обработчики выпадающего списка тим
 -- создаются выше по файлу, чем сама updateList, а замыкание в Lua не увидит
 -- локаль, объявленную после него. Ниже updateList определяется уже без local
@@ -2995,6 +3023,59 @@ local function createPlayerItem(data, layoutOrder)
 	nameLabel.TextTruncate = Enum.TextTruncate.AtEnd
 	nameLabel.Parent = item
 
+	local tpButton = Instance.new("TextButton")
+	tpButton.Name = "TPButton"
+	tpButton.Size = UDim2.new(0, 38, 0, 20)
+	tpButton.Position = UDim2.new(1, -122, 0, 2)
+	tpButton.BackgroundColor3 = COLOR_FIELD
+	tpButton.BorderSizePixel = 0
+	tpButton.Text = "TP"
+	tpButton.TextColor3 = COLOR_TEXT
+	tpButton.Font = Enum.Font.SourceSansBold
+	tpButton.TextSize = 11
+	tpButton.Parent = item
+
+	local tpCorner = Instance.new("UICorner")
+	tpCorner.CornerRadius = UDim.new(0, 3)
+	tpCorner.Parent = tpButton
+
+	local loopButton = Instance.new("TextButton")
+	loopButton.Name = "LoopGotoButton"
+	loopButton.Size = UDim2.new(0, 55, 0, 20)
+	loopButton.Position = UDim2.new(1, -80, 0, 2)
+	loopButton.BackgroundColor3 = loopGotoPlayers[data.Player.UserId] and COLOR_ON or COLOR_FIELD
+	loopButton.BorderSizePixel = 0
+	loopButton.Text = loopGotoPlayers[data.Player.UserId] and "UNLOOP" or "LOOP"
+	loopButton.TextColor3 = COLOR_TEXT
+	loopButton.Font = Enum.Font.SourceSansBold
+	loopButton.TextSize = 11
+	loopButton.Parent = item
+
+	local loopCorner = Instance.new("UICorner")
+	loopCorner.CornerRadius = UDim.new(0, 3)
+	loopCorner.Parent = loopButton
+
+	tpButton.MouseButton1Click:Connect(function()
+		local myCharacter = LocalPlayer.Character
+		local targetCharacter = data.Player.Character
+		local myRoot = myCharacter and myCharacter:FindFirstChild("HumanoidRootPart")
+		local targetRoot = targetCharacter and targetCharacter:FindFirstChild("HumanoidRootPart")
+		if myRoot and targetRoot then myRoot.CFrame = targetRoot.CFrame end
+	end)
+
+	loopButton.MouseButton1Click:Connect(function()
+		local userId = data.Player.UserId
+		if loopGotoPlayers[userId] then
+			stopLoopGoto(userId)
+			loopButton.Text = "LOOP"
+			loopButton.BackgroundColor3 = COLOR_FIELD
+		else
+			startLoopGoto(data.Player)
+			loopButton.Text = "UNLOOP"
+			loopButton.BackgroundColor3 = COLOR_ON
+		end
+	end)
+
 	-- НОВОЕ: сама подсветка ника
 	if bigCapture then
 		nameLabel.BackgroundTransparency = 0
@@ -3411,6 +3492,7 @@ for _, player in ipairs(Players:GetPlayers()) do
 end
 
 Players.PlayerRemoving:Connect(function(player)
+	stopLoopGoto(player.UserId)
 	if player.Character then
 		removeVisuals(player.Character)
 	end

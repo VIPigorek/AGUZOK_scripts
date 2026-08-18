@@ -156,6 +156,14 @@ local teamFilter = {
 	teamName = nil,
 }
 
+-- AUTO LOOP TOP-1: сохраняет включённое состояние даже когда подходящей
+-- цели временно нет. Целью становится игрок из выбранной тимы с
+-- максимальной ценой за поимку, но только если Capture > 100000.
+local AUTO_LOOP_THRESHOLD = 100000
+local autoLoopEnabled = false
+local autoLoopTarget = nil
+local autoLoopGeneration = 0
+
 -- По этим подстрокам режим "auto" узнаёт тиму преступников
 local CRIMINAL_TEAM_PATTERNS = {
 	"criminal",
@@ -1346,6 +1354,48 @@ if features.securityButton then
 
 	addHover(JobButton, 0.08)
 end
+
+--==================================================
+-- AUTO LOOP BUTTON
+--==================================================
+local AutoLoopButton = Instance.new("TextButton")
+AutoLoopButton.Name = "AutoLoopButton"
+AutoLoopButton.Size = UDim2.new(0, 48, 0, 24)
+AutoLoopButton.Position = UDim2.new(1, -104, 0, 34)
+AutoLoopButton.BackgroundColor3 = COLOR_FIELD
+AutoLoopButton.Text = "A-LOOP"
+AutoLoopButton.TextColor3 = COLOR_TEXT
+AutoLoopButton.Font = Enum.Font.SourceSansBold
+AutoLoopButton.TextSize = 11
+AutoLoopButton.BorderSizePixel = 0
+AutoLoopButton.ZIndex = 2
+AutoLoopButton.Parent = MainFrame
+
+local AutoLoopCorner = Instance.new("UICorner")
+AutoLoopCorner.CornerRadius = UDim.new(0, 4)
+AutoLoopCorner.Parent = AutoLoopButton
+
+local function updateAutoLoopButton()
+	if autoLoopEnabled then
+		AutoLoopButton.Text = "UNLOOP"
+		AutoLoopButton.BackgroundColor3 = COLOR_ON
+	else
+		AutoLoopButton.Text = "A-LOOP"
+		AutoLoopButton.BackgroundColor3 = COLOR_FIELD
+	end
+end
+
+addHover(AutoLoopButton, 0.08)
+
+AutoLoopButton.MouseButton1Click:Connect(function()
+	if autoLoopEnabled then
+		autoLoopEnabled = false
+		stopAutoLoop()
+	else
+		startAutoLoop()
+	end
+	updateAutoLoopButton()
+end)
 
 --==================================================
 -- TEAM DROPDOWN (НОВОЕ)
@@ -2909,6 +2959,65 @@ local function matchesFilter(player)
 end
 
 --==================================================
+-- AUTO LOOP TOP-1
+--==================================================
+local function getAutoLoopTarget()
+	local bestPlayer = nil
+	local bestCapture = AUTO_LOOP_THRESHOLD
+
+	for _, player in ipairs(Players:GetPlayers()) do
+		if player ~= LocalPlayer and matchesFilter(player) then
+			local capture = getCaptureValue(player, getBountyValue(player))
+			if capture > bestCapture then
+				bestCapture = capture
+				bestPlayer = player
+			end
+		end
+	end
+
+	return bestPlayer, bestCapture
+end
+
+local function stopAutoLoop()
+	autoLoopGeneration += 1
+	autoLoopTarget = nil
+end
+
+local function startAutoLoop()
+	if autoLoopEnabled then
+		return
+	end
+
+	autoLoopEnabled = true
+	autoLoopGeneration += 1
+	local generation = autoLoopGeneration
+
+	task.spawn(function()
+		while autoLoopEnabled and generation == autoLoopGeneration do
+			local target, capture = getAutoLoopTarget()
+			autoLoopTarget = target
+
+			if target and capture > AUTO_LOOP_THRESHOLD then
+				local myCharacter = LocalPlayer.Character
+				local targetCharacter = target.Character
+				local myRoot = myCharacter and myCharacter:FindFirstChild("HumanoidRootPart")
+				local targetRoot = targetCharacter and targetCharacter:FindFirstChild("HumanoidRootPart")
+
+				if myRoot and targetRoot then
+					myRoot.CFrame = targetRoot.CFrame
+				end
+			end
+
+			task.wait(0.15)
+		end
+
+		if generation == autoLoopGeneration then
+			autoLoopTarget = nil
+		end
+	end)
+end
+
+--==================================================
 -- PLAYER LIST
 --==================================================
 local function clearList()
@@ -3411,6 +3520,10 @@ for _, player in ipairs(Players:GetPlayers()) do
 end
 
 Players.PlayerRemoving:Connect(function(player)
+	if autoLoopTarget == player then
+		autoLoopTarget = nil
+	end
+
 	if player.Character then
 		removeVisuals(player.Character)
 	end

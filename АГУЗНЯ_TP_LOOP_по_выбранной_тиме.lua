@@ -156,6 +156,44 @@ local teamFilter = {
 	teamName = nil,
 }
 
+-- LOOPGOTO: активные цели. Цикл автоматически прекращается,
+-- если цель больше не соответствует ТЕКУЩЕМУ фильтру таблицы.
+local loopGotoPlayers = {}
+
+local function stopLoopGoto(userId)
+	loopGotoPlayers[userId] = nil
+end
+
+local function startLoopGoto(targetPlayer)
+	local userId = targetPlayer.UserId
+	if loopGotoPlayers[userId] then
+		return
+	end
+
+	loopGotoPlayers[userId] = true
+
+	task.spawn(function()
+		while loopGotoPlayers[userId] do
+			if not targetPlayer.Parent then
+				break
+			end
+
+			local character = LocalPlayer.Character
+			local targetCharacter = targetPlayer.Character
+			local root = character and character:FindFirstChild("HumanoidRootPart")
+			local targetRoot = targetCharacter and targetCharacter:FindFirstChild("HumanoidRootPart")
+
+			if root and targetRoot then
+				root.CFrame = targetRoot.CFrame
+			end
+
+			task.wait(0.15)
+		end
+
+		loopGotoPlayers[userId] = nil
+	end)
+end
+
 -- По этим подстрокам режим "auto" узнаёт тиму преступников
 local CRIMINAL_TEAM_PATTERNS = {
 	"criminal",
@@ -3034,6 +3072,62 @@ local function createPlayerItem(data, layoutOrder)
 		end
 	end)
 
+	-- TP / LOOPGOTO кнопки напротив ника
+	local tpButton = Instance.new("TextButton")
+	tpButton.Name = "TPButton"
+	tpButton.Size = UDim2.new(0, 34, 0, 18)
+	tpButton.Position = UDim2.new(1, -116, 0, 3)
+	tpButton.BackgroundColor3 = COLOR_FIELD
+	tpButton.BorderSizePixel = 0
+	tpButton.Text = "TP"
+	tpButton.TextColor3 = COLOR_TEXT
+	tpButton.Font = Enum.Font.SourceSansBold
+	tpButton.TextSize = 11
+	tpButton.Parent = item
+
+	local tpCorner = Instance.new("UICorner")
+	tpCorner.CornerRadius = UDim.new(0, 3)
+	tpCorner.Parent = tpButton
+
+	tpButton.MouseButton1Click:Connect(function()
+		local myCharacter = LocalPlayer.Character
+		local targetCharacter = data.Player.Character
+		local root = myCharacter and myCharacter:FindFirstChild("HumanoidRootPart")
+		local targetRoot = targetCharacter and targetCharacter:FindFirstChild("HumanoidRootPart")
+		if root and targetRoot then
+			root.CFrame = targetRoot.CFrame
+		end
+	end)
+
+	local loopButton = Instance.new("TextButton")
+	loopButton.Name = "LoopGotoButton"
+	loopButton.Size = UDim2.new(0, 70, 0, 18)
+	loopButton.Position = UDim2.new(1, -78, 0, 3)
+	loopButton.BackgroundColor3 = loopGotoPlayers[data.Player.UserId] and COLOR_ON or COLOR_FIELD
+	loopButton.BorderSizePixel = 0
+	loopButton.Text = loopGotoPlayers[data.Player.UserId] and "UNLOOP" or "LOOP"
+	loopButton.TextColor3 = COLOR_TEXT
+	loopButton.Font = Enum.Font.SourceSansBold
+	loopButton.TextSize = 11
+	loopButton.Parent = item
+
+	local loopCorner = Instance.new("UICorner")
+	loopCorner.CornerRadius = UDim.new(0, 3)
+	loopCorner.Parent = loopButton
+
+	loopButton.MouseButton1Click:Connect(function()
+		local userId = data.Player.UserId
+		if loopGotoPlayers[userId] then
+			stopLoopGoto(userId)
+			loopButton.Text = "LOOP"
+			loopButton.BackgroundColor3 = COLOR_FIELD
+		else
+			startLoopGoto(data.Player)
+			loopButton.Text = "UNLOOP"
+			loopButton.BackgroundColor3 = COLOR_ON
+		end
+	end)
+
 	local robberyLabel = Instance.new("TextLabel")
 	-- НОВОЕ: когда таймер розыска показывается, строка ограблений короче
 	-- на его ширину; в Jail break таймера нет и место свободно
@@ -3232,6 +3326,19 @@ function updateList()
 			end
 		end
 
+		-- ВАЖНО: LOOPGOTO привязан именно к текущей таблице.
+		-- Если выбранная тима изменилась или игрок перестал попадать
+		-- под текущий фильтр, его LOOP автоматически отключается.
+		local activeUserIds = {}
+		for _, data in ipairs(validPlayers) do
+			activeUserIds[data.Player.UserId] = true
+		end
+		for userId in pairs(loopGotoPlayers) do
+			if not activeUserIds[userId] then
+				stopLoopGoto(userId)
+			end
+		end
+
 		-- НОВОЕ: сортировка по цене за поимку — дороже сверху.
 		-- При равной цене выше тот, у кого больше награда, дальше — кто ближе
 		table.sort(validPlayers, function(a, b)
@@ -3244,7 +3351,6 @@ function updateList()
 			return a.Capture > b.Capture
 		end)
 
-		local activeUserIds = {}
 		local rowCount = #validPlayers
 		-- НОВОЕ: в нижнюю строку идут только игроки, без строки DROP
 		CountLabel.Text = "в списке: " .. #validPlayers
@@ -3411,6 +3517,7 @@ for _, player in ipairs(Players:GetPlayers()) do
 end
 
 Players.PlayerRemoving:Connect(function(player)
+	stopLoopGoto(player.UserId)
 	if player.Character then
 		removeVisuals(player.Character)
 	end
