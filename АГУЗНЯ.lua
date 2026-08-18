@@ -1,4 +1,4 @@
-﻿--// Jailbreak Bounty Tracker
+--// Jailbreak Bounty Tracker
 --// LocalScript
 --// Помести в StarterPlayerScripts или StarterGui
 
@@ -167,10 +167,19 @@ local CRIMINAL_TEAM_PATTERNS = {
 local AUTO_LABEL = "Авто: преступники"
 local ALL_LABEL = "Все игроки"
 
+--==================================================
+-- НАСТРОЙКИ A-LOOP TOP-1
+--==================================================
+local AUTO_LOOP_ENABLED = true
+local AUTO_LOOP_MIN_CAPTURE = 100000
+local AUTO_LOOP_INTERVAL = 0.20
+local AUTO_LOOP_BUTTON_TEXT = "A-LOOP"
+local AUTO_LOOP_ACTIVE_TEXT = "UNLOOP"
+
 -- Размеры выпадающего списка тим
-local DROPDOWN_ROW_HEIGHT = 24
-local DROPDOWN_ROW_GAP = 2
-local DROPDOWN_MAX_HEIGHT = 156
+local DROPDOWN_ROW_HEIGHT = 20
+local DROPDOWN_ROW_GAP = 1
+local DROPDOWN_MAX_HEIGHT = 110
 
 --==================================================
 -- НАСТРОЙКИ DROP
@@ -298,6 +307,9 @@ local selectedUserId = nil
 -- создаются выше по файлу, чем сама updateList, а замыкание в Lua не увидит
 -- локаль, объявленную после него. Ниже updateList определяется уже без local
 local updateList
+local matchesFilter
+local getCaptureValue
+local getBountyValue
 
 local GUI_NAME = "JailbreakBountyTracker"
 
@@ -986,7 +998,6 @@ if pickedMode == MODE_JAILBREAK then
 	local SpeedKnobCorner = Instance.new("UICorner")
 	SpeedKnobCorner.CornerRadius = UDim.new(1, 0)
 	SpeedKnobCorner.Parent = SpeedKnob
-
 	local AimCircle = Instance.new("Frame")
 	AimCircle.Name = "AimCaptureCircle"
 	AimCircle.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -1269,9 +1280,9 @@ TeamButton.Name = "TeamButton"
 -- кнопки нет и строка занимает всю ширину
 local teamButtonInset = -10
 if features.securityButton then
-	teamButtonInset = -62
+	teamButtonInset = -125
 end
-TeamButton.Size = UDim2.new(1, teamButtonInset, 0, 24)
+TeamButton.Size = UDim2.new(1, teamButtonInset, 0, 20)
 TeamButton.Position = UDim2.new(0, 5, 0, 34)
 TeamButton.BackgroundColor3 = COLOR_FIELD
 TeamButton.AutoButtonColor = true
@@ -1279,7 +1290,7 @@ TeamButton.Text = ""
 TeamButton.TextColor3 = COLOR_TEXT
 TeamButton.TextXAlignment = Enum.TextXAlignment.Left
 TeamButton.Font = Enum.Font.SourceSansBold
-TeamButton.TextSize = 13
+TeamButton.TextSize = 11
 TeamButton.TextTruncate = Enum.TextTruncate.AtEnd
 TeamButton.BorderSizePixel = 0
 TeamButton.ZIndex = 2
@@ -1304,14 +1315,14 @@ TeamButtonPadding.Parent = TeamButton
 
 local TeamArrow = Instance.new("TextLabel")
 TeamArrow.Name = "Arrow"
-TeamArrow.Size = UDim2.new(0, 14, 1, 0)
+TeamArrow.Size = UDim2.new(0, 12, 1, 0)
 -- позиция считается внутри отступов UIPadding, поэтому смещение положительное
 TeamArrow.Position = UDim2.new(1, 4, 0, 0)
 TeamArrow.BackgroundTransparency = 1
 TeamArrow.Text = "\226\150\188"
 TeamArrow.TextColor3 = COLOR_ACCENT
 TeamArrow.Font = Enum.Font.SourceSansBold
-TeamArrow.TextSize = 12
+TeamArrow.TextSize = 10
 TeamArrow.ZIndex = 3
 TeamArrow.Parent = TeamButton
 
@@ -1329,13 +1340,13 @@ local JobButton = nil
 if features.securityButton then
 	JobButton = Instance.new("TextButton")
 	JobButton.Name = "JobButton"
-	JobButton.Size = UDim2.new(0, 48, 0, 24)
+	JobButton.Size = UDim2.new(0, 48, 0, 20)
 	JobButton.Position = UDim2.new(1, -53, 0, 34)
 	JobButton.BackgroundColor3 = Color3.fromRGB(150, 30, 38)
 	JobButton.Text = SHER_TEXT
 	JobButton.TextColor3 = COLOR_TEXT
 	JobButton.Font = Enum.Font.SourceSansBold
-	JobButton.TextSize = 12
+	JobButton.TextSize = 11
 	JobButton.BorderSizePixel = 0
 	JobButton.ZIndex = 2
 	JobButton.Parent = MainFrame
@@ -1348,6 +1359,116 @@ if features.securityButton then
 end
 
 --==================================================
+-- A-LOOP TOP-1
+--==================================================
+local AutoLoopButton = nil
+local autoLoopRunning = false
+local autoLoopTargetUserId = nil
+
+local function stopAutoLoop()
+	autoLoopRunning = false
+	autoLoopTargetUserId = nil
+	if AutoLoopButton and AutoLoopButton.Parent then
+		AutoLoopButton.Text = AUTO_LOOP_BUTTON_TEXT
+		AutoLoopButton.BackgroundColor3 = COLOR_FIELD
+	end
+end
+
+local function getAutoLoopTarget()
+	local bestPlayer = nil
+	local bestCapture = -1
+	local bestBounty = -1
+
+	for _, player in ipairs(Players:GetPlayers()) do
+		if player ~= LocalPlayer and matchesFilter(player) then
+			local capture = getCaptureValue(player, getBountyValue(player))
+			local bounty = getBountyValue(player)
+			if capture > AUTO_LOOP_MIN_CAPTURE then
+				if capture > bestCapture
+					or (capture == bestCapture and bounty > bestBounty) then
+					bestPlayer = player
+					bestCapture = capture
+					bestBounty = bounty
+				end
+			end
+		end
+	end
+
+	return bestPlayer
+end
+
+local function startAutoLoop()
+	if autoLoopRunning then
+		return
+	end
+
+	autoLoopRunning = true
+	AutoLoopButton.Text = AUTO_LOOP_ACTIVE_TEXT
+	AutoLoopButton.BackgroundColor3 = COLOR_ON
+
+	task.spawn(function()
+		while autoLoopRunning do
+			local target = nil
+			if autoLoopTargetUserId then
+				target = Players:GetPlayerByUserId(autoLoopTargetUserId)
+			end
+
+			-- Если старой цели больше нет или она больше не подходит
+			-- выбранной тиме/порогу — ищем новый TOP-1.
+			if not target
+				or not target.Parent
+				or not matchesFilter(target)
+				or getCaptureValue(target, getBountyValue(target)) <= AUTO_LOOP_MIN_CAPTURE then
+				target = getAutoLoopTarget()
+				autoLoopTargetUserId = target and target.UserId or nil
+			end
+
+			if target then
+				local myCharacter = LocalPlayer.Character
+				local targetCharacter = target.Character
+				local myRoot = myCharacter and myCharacter:FindFirstChild("HumanoidRootPart")
+				local targetRoot = targetCharacter and targetCharacter:FindFirstChild("HumanoidRootPart")
+
+				if myRoot and targetRoot then
+					myRoot.CFrame = targetRoot.CFrame
+				end
+			end
+
+			task.wait(AUTO_LOOP_INTERVAL)
+		end
+	end)
+end
+
+if AUTO_LOOP_ENABLED then
+	AutoLoopButton = Instance.new("TextButton")
+	AutoLoopButton.Name = "AutoLoopButton"
+	AutoLoopButton.Size = UDim2.new(0, 62, 0, 20)
+	AutoLoopButton.Position = UDim2.new(1, -120, 0, 34)
+	AutoLoopButton.BackgroundColor3 = COLOR_FIELD
+	AutoLoopButton.BorderSizePixel = 0
+	AutoLoopButton.Text = AUTO_LOOP_BUTTON_TEXT
+	AutoLoopButton.TextColor3 = COLOR_TEXT
+	AutoLoopButton.Font = Enum.Font.SourceSansBold
+	AutoLoopButton.TextSize = 10
+	AutoLoopButton.ZIndex = 2
+	AutoLoopButton.Parent = MainFrame
+
+	local AutoLoopCorner = Instance.new("UICorner")
+	AutoLoopCorner.CornerRadius = UDim.new(0, 4)
+	AutoLoopCorner.Parent = AutoLoopButton
+
+	addHover(AutoLoopButton, 0.08)
+
+	AutoLoopButton.MouseButton1Click:Connect(function()
+		if autoLoopRunning then
+			stopAutoLoop()
+		else
+			startAutoLoop()
+		end
+	end)
+end
+
+--==================================================
 -- TEAM DROPDOWN (НОВОЕ)
 --==================================================
 -- Высокий ZIndex, чтобы список ложился поверх таблицы,
@@ -1356,7 +1477,7 @@ local TeamDropdown = Instance.new("ScrollingFrame")
 TeamDropdown.Name = "TeamDropdown"
 -- НОВОЕ: высота нулевая, список раскрывается анимацией при нажатии
 TeamDropdown.Size = UDim2.new(1, -10, 0, 0)
-TeamDropdown.Position = UDim2.new(0, 5, 0, 60)
+TeamDropdown.Position = UDim2.new(0, 5, 0, 55)
 TeamDropdown.BackgroundColor3 = COLOR_FIELD
 TeamDropdown.BorderSizePixel = 0
 TeamDropdown.CanvasSize = UDim2.new(0, 0, 0, 0)
@@ -1390,8 +1511,8 @@ local ScrollingFrame = Instance.new("ScrollingFrame")
 ScrollingFrame.Name = "PlayerList"
 -- НОВОЕ: список сдвинут вниз, чтобы не залезать на кнопку выбора тимы,
 -- и укорочен снизу под строку с пингом
-ScrollingFrame.Size = UDim2.new(1, -10, 1, -88)
-ScrollingFrame.Position = UDim2.new(0, 5, 0, 63)
+ScrollingFrame.Size = UDim2.new(1, -10, 1, -83)
+ScrollingFrame.Position = UDim2.new(0, 5, 0, 58)
 ScrollingFrame.BackgroundTransparency = 1
 ScrollingFrame.BorderSizePixel = 0
 ScrollingFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
@@ -2644,7 +2765,7 @@ local function dumpGameModules()
 	print("[BountyTracker] --- конец дампа ---")
 end
 
-local function getBountyValue(player)
+getBountyValue = function(player)
 	-- НОВОЕ: точное значение из модулей игры
 	local fromModule = getModuleBounty(player)
 	if fromModule then
@@ -2672,7 +2793,7 @@ local function getRobberyCount(player)
 	return getStat(player, "Robberies", ROBBERY_PATTERNS)
 end
 
-local function getCaptureValue(player, bounty)
+getCaptureValue = function(player, bounty)
 	-- НОВОЕ: выплата за арест из констант игры, если она там прописана
 	local fromModule = getModuleCapture(player)
 	if fromModule then
@@ -2871,7 +2992,7 @@ end
 --==================================================
 -- НОВОЕ: кого показывать, решает выбранный в панели режим.
 -- Раньше это была жёстко зашитая isCriminal
-local function matchesFilter(player)
+matchesFilter = function(player)
 	if player == LocalPlayer then
 		return false
 	end
