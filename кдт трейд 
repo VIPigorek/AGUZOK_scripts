@@ -1,0 +1,1145 @@
+--==============================================================
+-- 🛒 TRADE MARKET MENU
+-- 2x2 + CENTER + DRAG
+--==============================================================
+
+print("[TRADE] ================================")
+print("[TRADE] Запуск скрипта...")
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+
+local LocalPlayer = Players.LocalPlayer
+if not LocalPlayer then
+	warn("[TRADE] LocalPlayer не найден!")
+	return
+end
+
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+
+--==============================================================
+-- УДАЛЯЕМ СТАРУЮ ВЕРСИЮ
+--==============================================================
+
+local OldGui = PlayerGui:FindFirstChild("TradeMenuGui")
+
+if OldGui then
+	OldGui:Destroy()
+end
+
+--==============================================================
+-- SCREEN GUI
+--==============================================================
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "TradeMenuGui"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.Parent = PlayerGui
+
+--==============================================================
+-- КНОПКА ОТКРЫТИЯ
+--==============================================================
+
+local OpenButton = Instance.new("TextButton")
+OpenButton.Name = "OpenButton"
+OpenButton.Size = UDim2.new(0, 150, 0, 42)
+OpenButton.Position = UDim2.new(0, 12, 0.45, 0)
+
+OpenButton.BackgroundColor3 = Color3.fromRGB(0, 140, 255)
+OpenButton.BorderSizePixel = 0
+
+OpenButton.TextColor3 = Color3.fromRGB(255,255,255)
+OpenButton.TextSize = 15
+OpenButton.Font = Enum.Font.GothamBold
+OpenButton.Text = "🛒 Трейд Список"
+
+OpenButton.Parent = ScreenGui
+
+local OpenCorner = Instance.new("UICorner")
+OpenCorner.CornerRadius = UDim.new(0,7)
+OpenCorner.Parent = OpenButton
+
+--==============================================================
+-- ГЛАВНОЕ ОКНО
+--==============================================================
+
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+
+-- КОМПАКТНЫЙ РАЗМЕР
+MainFrame.Size = UDim2.new(0, 430, 0, 390)
+
+-- АВТОМАТИЧЕСКИЙ ЦЕНТР
+MainFrame.AnchorPoint = Vector2.new(0.5,0.5)
+MainFrame.Position = UDim2.new(0.5,0,0.5,0)
+
+MainFrame.BackgroundColor3 = Color3.fromRGB(30,30,35)
+MainFrame.BorderSizePixel = 0
+MainFrame.Visible = false
+
+MainFrame.Parent = ScreenGui
+
+local MainCorner = Instance.new("UICorner")
+MainCorner.CornerRadius = UDim.new(0,10)
+MainCorner.Parent = MainFrame
+
+--==============================================================
+-- АДАПТАЦИЯ ПОД ТЕЛЕФОН
+--==============================================================
+
+local SizeConstraint = Instance.new("UISizeConstraint")
+SizeConstraint.MinSize = Vector2.new(300,330)
+SizeConstraint.MaxSize = Vector2.new(430,390)
+SizeConstraint.Parent = MainFrame
+
+--==============================================================
+-- ВЕРХНЯЯ ПАНЕЛЬ
+--==============================================================
+
+local DragBar = Instance.new("Frame")
+DragBar.Name = "DragBar"
+
+DragBar.Size = UDim2.new(1,0,0,45)
+DragBar.Position = UDim2.new(0,0,0,0)
+
+DragBar.BackgroundTransparency = 1
+DragBar.Active = true
+
+DragBar.Parent = MainFrame
+
+--==============================================================
+-- ЗАГОЛОВОК
+--==============================================================
+
+local Title = Instance.new("TextLabel")
+
+Title.Size = UDim2.new(1,-170,0,40)
+Title.Position = UDim2.new(0,15,0,2)
+
+Title.BackgroundTransparency = 1
+
+Title.TextColor3 = Color3.fromRGB(255,255,255)
+Title.TextSize = 17
+Title.Font = Enum.Font.GothamBold
+
+Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.Text = "Машины на продаже"
+
+Title.Parent = DragBar
+
+--==============================================================
+-- КНОПКА ОЧИСТКИ
+--==============================================================
+
+local ClearButton = Instance.new("TextButton")
+
+ClearButton.Name = "ClearButton"
+
+ClearButton.Size = UDim2.new(0,100,0,32)
+ClearButton.Position = UDim2.new(1,-140,0,6)
+
+ClearButton.BackgroundColor3 =
+	Color3.fromRGB(200,55,55)
+
+ClearButton.BorderSizePixel = 0
+
+ClearButton.TextColor3 =
+	Color3.fromRGB(255,255,255)
+
+ClearButton.TextSize = 12
+ClearButton.Font = Enum.Font.GothamBold
+
+ClearButton.Text = "🧹 Очистить"
+
+ClearButton.Parent = DragBar
+
+local ClearCorner = Instance.new("UICorner")
+ClearCorner.CornerRadius = UDim.new(0,6)
+ClearCorner.Parent = ClearButton
+
+--==============================================================
+-- КНОПКА ЗАКРЫТИЯ
+--==============================================================
+
+local CloseButton = Instance.new("TextButton")
+
+CloseButton.Name = "CloseButton"
+
+CloseButton.Size = UDim2.new(0,32,0,32)
+CloseButton.Position = UDim2.new(1,-37,0,6)
+
+CloseButton.BackgroundColor3 =
+	Color3.fromRGB(60,60,65)
+
+CloseButton.BorderSizePixel = 0
+
+CloseButton.TextColor3 =
+	Color3.fromRGB(255,255,255)
+
+CloseButton.TextSize = 18
+CloseButton.Font = Enum.Font.GothamBold
+
+CloseButton.Text = "×"
+
+CloseButton.Parent = DragBar
+
+local CloseCorner = Instance.new("UICorner")
+CloseCorner.CornerRadius = UDim.new(0,6)
+CloseCorner.Parent = CloseButton
+
+--==============================================================
+-- ФИЛЬТР ЦЕНЫ
+--==============================================================
+
+local MaxPriceInput = Instance.new("TextBox")
+
+MaxPriceInput.Name = "MaxPriceInput"
+
+MaxPriceInput.Size =
+	UDim2.new(1,-30,0,34)
+
+MaxPriceInput.Position =
+	UDim2.new(0,15,0,48)
+
+MaxPriceInput.BackgroundColor3 =
+	Color3.fromRGB(45,45,50)
+
+MaxPriceInput.BorderSizePixel = 0
+
+MaxPriceInput.TextColor3 =
+	Color3.fromRGB(255,255,255)
+
+MaxPriceInput.PlaceholderColor3 =
+	Color3.fromRGB(150,150,150)
+
+MaxPriceInput.PlaceholderText =
+	"Максимальная цена..."
+
+MaxPriceInput.Text = ""
+
+MaxPriceInput.TextSize = 13
+MaxPriceInput.Font = Enum.Font.Gotham
+
+MaxPriceInput.ClearTextOnFocus = false
+
+MaxPriceInput.Parent = MainFrame
+
+local InputCorner = Instance.new("UICorner")
+InputCorner.CornerRadius = UDim.new(0,6)
+InputCorner.Parent = MaxPriceInput
+
+--==============================================================
+-- СПИСОК
+--==============================================================
+
+local ScrollingFrame = Instance.new("ScrollingFrame")
+
+ScrollingFrame.Name = "ScrollingFrame"
+
+ScrollingFrame.Size =
+	UDim2.new(1,-30,1,-95)
+
+ScrollingFrame.Position =
+	UDim2.new(0,15,0,88)
+
+ScrollingFrame.BackgroundTransparency = 1
+ScrollingFrame.BorderSizePixel = 0
+
+ScrollingFrame.ScrollBarThickness = 5
+
+ScrollingFrame.CanvasSize =
+	UDim2.new(0,0,0,0)
+
+ScrollingFrame.Parent = MainFrame
+
+--==============================================================
+-- 2 КАРТОЧКИ В ШИРИНУ
+--==============================================================
+
+local UIGridLayout = Instance.new("UIGridLayout")
+
+UIGridLayout.Name = "UIGridLayout"
+
+UIGridLayout.CellSize =
+	UDim2.new(0.5,-5,0,145)
+
+UIGridLayout.CellPadding =
+	UDim2.new(0,7,0,7)
+
+UIGridLayout.SortOrder =
+	Enum.SortOrder.LayoutOrder
+
+UIGridLayout.Parent = ScrollingFrame
+
+--==============================================================
+-- ACTIVE OFFERS
+--==============================================================
+
+local ActiveOffers = {}
+
+--==============================================================
+-- REMOTES
+--==============================================================
+
+local OnOfferAdded = nil
+local OfferPurchase = nil
+
+pcall(function()
+
+	local Remotes =
+		ReplicatedStorage:FindFirstChild("Remotes")
+
+	local Services =
+		Remotes and
+		Remotes:FindFirstChild("Services")
+
+	local TradingHub =
+		Services and
+		Services:FindFirstChild(
+			"TradingHubServiceRemotes"
+		)
+
+	if TradingHub then
+
+		OnOfferAdded =
+			TradingHub:FindFirstChild(
+				"OnOfferAdded"
+			)
+
+		OfferPurchase =
+			TradingHub:FindFirstChild(
+				"OfferPurchase"
+			)
+
+	end
+
+end)
+
+--==============================================================
+-- DEMO
+--==============================================================
+
+if not OnOfferAdded then
+
+	ActiveOffers = {
+
+		{
+			SellerName = "igrok0999ua",
+
+			Data = {
+				OfferId = "demo_1",
+				PriceInTokens = 10,
+
+				Item = {
+					Name = "MercedesBenz14",
+					Type = "Car"
+				}
+			}
+		},
+
+		{
+			SellerName = "AJIELLIKA",
+
+			Data = {
+				OfferId = "demo_2",
+				PriceInTokens = 100,
+
+				Item = {
+					Name = "BMW2",
+					Type = "Car"
+				}
+			}
+		},
+
+		{
+			SellerName = "TycoonKing",
+
+			Data = {
+				OfferId = "demo_3",
+				PriceInTokens = 550,
+
+				Item = {
+					Name = "AudiR8",
+					Type = "Car"
+				}
+			}
+		},
+
+		{
+			SellerName = "Player4",
+
+			Data = {
+				OfferId = "demo_4",
+				PriceInTokens = 800,
+
+				Item = {
+					Name = "Lamborghini",
+					Type = "Car"
+				}
+			}
+		}
+
+	}
+
+end
+
+--==============================================================
+-- ЦЕНА
+--==============================================================
+
+local function GetPrice(Offer)
+
+	if not Offer
+		or not Offer.Data then
+		return 0
+	end
+
+	return tonumber(
+		Offer.Data.PriceInTokens
+	) or 0
+
+end
+
+--==============================================================
+-- CANVAS
+--==============================================================
+
+local function UpdateCanvas()
+
+	task.defer(function()
+
+		local Height =
+			UIGridLayout.AbsoluteContentSize.Y
+
+		ScrollingFrame.CanvasSize =
+			UDim2.new(
+				0,
+				0,
+				0,
+				Height + 10
+			)
+
+	end)
+
+end
+
+--==============================================================
+-- ТЕЛЕПОРТ
+--==============================================================
+
+local function TeleportToPlayer(Player)
+
+	if not Player
+		or not LocalPlayer.Character
+		or not Player.Character then
+		return false
+	end
+
+	local MyRoot =
+		LocalPlayer.Character:
+		FindFirstChild("HumanoidRootPart")
+
+	local TargetRoot =
+		Player.Character:
+		FindFirstChild("HumanoidRootPart")
+
+	if not MyRoot
+		or not TargetRoot then
+		return false
+	end
+
+	MyRoot.CFrame =
+		TargetRoot.CFrame *
+		CFrame.new(0,0,4)
+
+	return true
+
+end
+
+--==============================================================
+-- УДАЛЕНИЕ КАРТОЧЕК
+--==============================================================
+
+local function ClearCards()
+
+	for _,Child in ipairs(
+		ScrollingFrame:GetChildren()
+	) do
+
+		if Child:IsA("Frame") then
+			Child:Destroy()
+		end
+
+	end
+
+end
+
+--==============================================================
+-- СОЗДАНИЕ КАРТОЧКИ
+--==============================================================
+
+local function CreateCard(Offer,Order)
+
+	local Data = Offer.Data
+
+	local Card = Instance.new("Frame")
+
+	Card.Name =
+		"Offer_" ..
+		tostring(
+			Data.OfferId or Order
+		)
+
+	Card.BackgroundColor3 =
+		Color3.fromRGB(50,50,55)
+
+	Card.BorderSizePixel = 0
+
+	Card.LayoutOrder = Order
+
+	Card.Parent = ScrollingFrame
+
+	local Corner = Instance.new("UICorner")
+	Corner.CornerRadius =
+		UDim.new(0,7)
+	Corner.Parent = Card
+
+	--==========================================================
+	-- НАЗВАНИЕ
+	--==========================================================
+
+	local CarName = Instance.new("TextLabel")
+
+	CarName.Size =
+		UDim2.new(1,-16,0,30)
+
+	CarName.Position =
+		UDim2.new(0,8,0,7)
+
+	CarName.BackgroundTransparency = 1
+
+	CarName.TextColor3 =
+		Color3.fromRGB(255,255,255)
+
+	CarName.TextSize = 13
+	CarName.Font =
+		Enum.Font.GothamBold
+
+	CarName.TextXAlignment =
+		Enum.TextXAlignment.Left
+
+	CarName.TextTruncate =
+		Enum.TextTruncate.AtEnd
+
+	CarName.Text =
+		tostring(
+			Data.Item and
+			Data.Item.Name or
+			"Неизвестная машина"
+		)
+
+	CarName.Parent = Card
+
+	--==========================================================
+	-- ПРОДАВЕЦ
+	--==========================================================
+
+	local Seller = Instance.new("TextLabel")
+
+	Seller.Size =
+		UDim2.new(1,-16,0,22)
+
+	Seller.Position =
+		UDim2.new(0,8,0,38)
+
+	Seller.BackgroundTransparency = 1
+
+	Seller.TextColor3 =
+		Color3.fromRGB(180,180,180)
+
+	Seller.TextSize = 10
+	Seller.Font = Enum.Font.Gotham
+
+	Seller.TextXAlignment =
+		Enum.TextXAlignment.Left
+
+	Seller.TextTruncate =
+		Enum.TextTruncate.AtEnd
+
+	Seller.Text =
+		"👤 " ..
+		tostring(
+			Offer.SellerName or
+			"Неизвестен"
+		)
+
+	Seller.Parent = Card
+
+	--==========================================================
+	-- ЦЕНА
+	--==========================================================
+
+	local Price = Instance.new("TextLabel")
+
+	Price.Size =
+		UDim2.new(1,-16,0,25)
+
+	Price.Position =
+		UDim2.new(0,8,0,61)
+
+	Price.BackgroundTransparency = 1
+
+	Price.TextColor3 =
+		Color3.fromRGB(0,220,100)
+
+	Price.TextSize = 14
+	Price.Font =
+		Enum.Font.GothamBold
+
+	Price.TextXAlignment =
+		Enum.TextXAlignment.Left
+
+	Price.Text =
+		"💰 " ..
+		string.format(
+			"%.0f",
+			GetPrice(Offer)
+		)
+
+	Price.Parent = Card
+
+	--==========================================================
+	-- КУПИТЬ
+	--==========================================================
+
+	local BuyButton = Instance.new("TextButton")
+
+	BuyButton.Size =
+		UDim2.new(0.48,-4,0,30)
+
+	BuyButton.Position =
+		UDim2.new(0,7,1,-37)
+
+	BuyButton.BackgroundColor3 =
+		Color3.fromRGB(0,180,90)
+
+	BuyButton.BorderSizePixel = 0
+
+	BuyButton.TextColor3 =
+		Color3.fromRGB(255,255,255)
+
+	BuyButton.TextSize = 11
+	BuyButton.Font =
+		Enum.Font.GothamBold
+
+	BuyButton.Text =
+		"Купить"
+
+	BuyButton.Parent = Card
+
+	local BuyCorner = Instance.new("UICorner")
+	BuyCorner.CornerRadius =
+		UDim.new(0,5)
+	BuyCorner.Parent = BuyButton
+
+	--==========================================================
+	-- ТЕЛЕПОРТ
+	--==========================================================
+
+	local TeleportButton =
+		Instance.new("TextButton")
+
+	TeleportButton.Size =
+		UDim2.new(0.48,-4,0,30)
+
+	TeleportButton.Position =
+		UDim2.new(0.52,0,1,-37)
+
+	TeleportButton.BackgroundColor3 =
+		Color3.fromRGB(0,140,255)
+
+	TeleportButton.BorderSizePixel = 0
+
+	TeleportButton.TextColor3 =
+		Color3.fromRGB(255,255,255)
+
+	TeleportButton.TextSize = 10
+	TeleportButton.Font =
+		Enum.Font.GothamBold
+
+	TeleportButton.Text =
+		"🚶 К продавцу"
+
+	TeleportButton.Parent = Card
+
+	local TeleportCorner =
+		Instance.new("UICorner")
+
+	TeleportCorner.CornerRadius =
+		UDim.new(0,5)
+
+	TeleportCorner.Parent =
+		TeleportButton
+
+	--==========================================================
+	-- ПОКУПКА
+	--==========================================================
+
+	BuyButton.Activated:Connect(function()
+
+		BuyButton.Active = false
+		BuyButton.Text = "..."
+
+		local SellerPlayer =
+			Players:FindFirstChild(
+				tostring(
+					Offer.SellerName
+				)
+			)
+
+		if not SellerPlayer then
+
+			BuyButton.Text =
+				"Вышел"
+
+			task.wait(1)
+
+			if Card.Parent then
+				BuyButton.Text =
+					"Купить"
+				BuyButton.Active = true
+			end
+
+			return
+		end
+
+		if not OfferPurchase then
+
+			BuyButton.Text =
+				"Нет Remote"
+
+			task.wait(1)
+
+			if Card.Parent then
+				BuyButton.Text =
+					"Купить"
+				BuyButton.Active = true
+			end
+
+			return
+		end
+
+		local Success =
+			pcall(function()
+
+				OfferPurchase:
+				InvokeServer(
+					SellerPlayer,
+					Offer.Data
+				)
+
+			end)
+
+		if Success then
+			BuyButton.Text =
+				"Готово"
+		else
+			BuyButton.Text =
+				"Ошибка"
+		end
+
+		task.wait(1)
+
+		if Card.Parent then
+
+			BuyButton.Text =
+				"Купить"
+
+			BuyButton.Active =
+				true
+
+		end
+
+	end)
+
+	--==========================================================
+	-- ТЕЛЕПОРТ
+	--==========================================================
+
+	TeleportButton.Activated:Connect(function()
+
+		local SellerPlayer =
+			Players:FindFirstChild(
+				tostring(
+					Offer.SellerName
+				)
+			)
+
+		if not SellerPlayer then
+
+			TeleportButton.Text =
+				"Вышел"
+
+			task.wait(1)
+
+			if Card.Parent then
+				TeleportButton.Text =
+					"🚶 К продавцу"
+			end
+
+			return
+		end
+
+		TeleportButton.Text =
+			"⏳"
+
+		local Success =
+			TeleportToPlayer(
+				SellerPlayer
+			)
+
+		if Success then
+			TeleportButton.Text =
+				"Готово"
+		else
+			TeleportButton.Text =
+				"Ошибка"
+		end
+
+		task.wait(1)
+
+		if Card.Parent then
+			TeleportButton.Text =
+				"🚶 К продавцу"
+		end
+
+	end)
+
+end
+
+--==============================================================
+-- ОБНОВЛЕНИЕ
+--==============================================================
+
+local function RefreshMarketUI()
+
+	table.sort(
+		ActiveOffers,
+		function(A,B)
+			return GetPrice(A) <
+				GetPrice(B)
+		end
+	)
+
+	local MaxPrice =
+		tonumber(
+			MaxPriceInput.Text
+		) or math.huge
+
+	ClearCards()
+
+	local Order = 0
+
+	for _,Offer in ipairs(
+		ActiveOffers
+	) do
+
+		if GetPrice(Offer)
+			<= MaxPrice then
+
+			Order += 1
+
+			CreateCard(
+				Offer,
+				Order
+			)
+
+		end
+
+	end
+
+	UpdateCanvas()
+
+end
+
+--==============================================================
+-- НОВОЕ ОБЪЯВЛЕНИЕ
+--==============================================================
+
+if OnOfferAdded then
+
+	OnOfferAdded.OnClientEvent:Connect(
+		function(
+			SellerPlayer,
+			OfferData
+		)
+
+			if not SellerPlayer
+				or not OfferData
+				or not OfferData.Item then
+				return
+			end
+
+			if OfferData.Item.Type
+				and OfferData.Item.Type ~= "Car" then
+				return
+			end
+
+			for _,Existing in ipairs(
+				ActiveOffers
+			) do
+
+				if Existing.Data
+					and Existing.Data.OfferId
+					==
+					OfferData.OfferId then
+
+					return
+				end
+
+			end
+
+			table.insert(
+				ActiveOffers,
+				{
+					SellerName =
+						SellerPlayer.Name,
+
+					Data =
+						OfferData
+				}
+			)
+
+			RefreshMarketUI()
+
+		end
+	)
+
+end
+
+--==============================================================
+-- ОЧИСТИТЬ
+--==============================================================
+
+ClearButton.Activated:Connect(function()
+
+	MaxPriceInput.Text = ""
+
+	table.clear(
+		ActiveOffers
+	)
+
+	ClearCards()
+
+	ScrollingFrame.CanvasPosition =
+		Vector2.new(0,0)
+
+	ScrollingFrame.CanvasSize =
+		UDim2.new(0,0,0,0)
+
+	print(
+		"[TRADE] Список очищен"
+	)
+
+end)
+
+--==============================================================
+-- ФИЛЬТР
+--==============================================================
+
+local ChangingText = false
+
+MaxPriceInput:GetPropertyChangedSignal(
+	"Text"
+):Connect(function()
+
+	if ChangingText then
+		return
+	end
+
+	local Text =
+		MaxPriceInput.Text
+
+	local Clean =
+		Text:gsub("%D","")
+
+	if Text ~= Clean then
+
+		ChangingText = true
+
+		MaxPriceInput.Text =
+			Clean
+
+		ChangingText = false
+
+	end
+
+	RefreshMarketUI()
+
+end)
+
+--==============================================================
+-- ОТКРЫТИЕ
+--==============================================================
+
+OpenButton.Activated:Connect(function()
+
+	MainFrame.Visible =
+		not MainFrame.Visible
+
+	if MainFrame.Visible then
+
+		-- ВСЕГДА ЦЕНТР
+		MainFrame.AnchorPoint =
+			Vector2.new(0.5,0.5)
+
+		MainFrame.Position =
+			UDim2.new(
+				0.5,
+				0,
+				0.5,
+				0
+			)
+
+		RefreshMarketUI()
+
+	end
+
+end)
+
+--==============================================================
+-- ЗАКРЫТИЕ
+--==============================================================
+
+CloseButton.Activated:Connect(function()
+
+	MainFrame.Visible = false
+
+end)
+
+--==============================================================
+-- 🖐 ПЕРЕТАСКИВАНИЕ МЕНЮ
+-- ПК + ТЕЛЕФОН
+--==============================================================
+
+local Dragging = false
+local DragInput = nil
+local DragStart = nil
+local StartPosition = nil
+
+local function UpdateDrag(Input)
+
+	local Delta =
+		Input.Position - DragStart
+
+	MainFrame.Position =
+		UDim2.new(
+			StartPosition.X.Scale,
+			StartPosition.X.Offset + Delta.X,
+			StartPosition.Y.Scale,
+			StartPosition.Y.Offset + Delta.Y
+		)
+
+end
+
+DragBar.InputBegan:Connect(
+	function(Input)
+
+		if Input.UserInputType ==
+			Enum.UserInputType.MouseButton1
+			or
+			Input.UserInputType ==
+			Enum.UserInputType.Touch then
+
+			Dragging = true
+
+			DragStart =
+				Input.Position
+
+			StartPosition =
+				MainFrame.Position
+
+			DragInput =
+				Input
+
+			Input.Changed:Connect(
+				function()
+
+					if Input.UserInputState ==
+						Enum.UserInputState.End then
+
+						Dragging = false
+
+					end
+
+				end
+			)
+
+		end
+
+	end
+)
+
+DragBar.InputChanged:Connect(
+	function(Input)
+
+		if Input.UserInputType ==
+			Enum.UserInputType.MouseMovement
+			or
+			Input.UserInputType ==
+			Enum.UserInputType.Touch then
+
+			DragInput =
+				Input
+
+		end
+
+	end
+)
+
+UserInputService.InputChanged:Connect(
+	function(Input)
+
+		if Input == DragInput
+			and Dragging then
+
+			UpdateDrag(Input)
+
+		end
+
+	end
+)
+
+--==============================================================
+-- АВТООБНОВЛЕНИЕ
+--==============================================================
+
+task.spawn(function()
+
+	while ScreenGui
+		and ScreenGui.Parent do
+
+		if MainFrame.Visible then
+			RefreshMarketUI()
+		end
+
+		task.wait(1)
+
+	end
+
+end)
+
+--==============================================================
+-- СТАРТ
+--==============================================================
+
+RefreshMarketUI()
+
+print("[TRADE] ================================")
+print("[TRADE] Скрипт успешно запущен")
+print("[TRADE] Меню: центр экрана")
+print("[TRADE] Сетка: 2 x 2")
+print("[TRADE] Drag: включён")
+print("[TRADE] ================================")

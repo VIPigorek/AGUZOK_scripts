@@ -1,0 +1,686 @@
+--==================================================
+-- SUSPENSION EDITOR (MOBILE OPTIMIZED)
+-- Полная замена предыдущей версии при повторном запуске
+--==================================================
+
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+
+local Player = Players.LocalPlayer
+local PlayerGui = Player:WaitForChild("PlayerGui")
+
+--==================================================
+-- УДАЛЯЕМ ПРЕДЫДУЩУЮ ВЕРСИЮ
+--==================================================
+
+local OldGui = PlayerGui:FindFirstChild("SuspensionEditor")
+
+if OldGui then
+	OldGui:Destroy()
+end
+
+--==================================================
+-- НАСТРОЙКИ
+--==================================================
+
+local RANGES = {
+	Damping = { Min = 0, Max = 500000, Decimals = 0 },
+	FreeLength = { Min = 0, Max = 1000, Decimals = 2 },
+	MaxForce = { Min = 0, Max = 10000000, Decimals = 0 },
+	Stiffness = { Min = 0, Max = 10000000, Decimals = 0 },
+}
+
+--==================================================
+-- ПОМОЩНИКИ ДЛЯ TOUCH/MOUSE
+--==================================================
+
+-- На телефоне события приходят как Enum.UserInputType.Touch,
+-- а не MouseButton1 — поэтому везде проверяем оба варианта.
+
+local function IsPressInput(Input)
+	return Input.UserInputType == Enum.UserInputType.MouseButton1
+		or Input.UserInputType == Enum.UserInputType.Touch
+end
+
+local function IsMoveInput(Input)
+	return Input.UserInputType == Enum.UserInputType.MouseMovement
+		or Input.UserInputType == Enum.UserInputType.Touch
+end
+
+--==================================================
+-- ПОИСК ПОДВЕСКИ
+--==================================================
+
+local function getSprings()
+	local Vehicles = workspace:WaitForChild("Vehicles")
+	local Vehicle = Vehicles:WaitForChild(Player.Name)
+	local Constraints = Vehicle:WaitForChild("Constraints")
+
+	return {
+		FrontLeft = Constraints:WaitForChild("FLSpring"),
+		FrontRight = Constraints:WaitForChild("FRSpring"),
+		RearLeft = Constraints:WaitForChild("RLSpring"),
+		RearRight = Constraints:WaitForChild("RRSpring"),
+	}
+end
+
+local Springs
+
+local Success, Result = pcall(getSprings)
+
+if Success then
+	Springs = Result
+else
+	warn("Не удалось найти подвеску:", Result)
+	return
+end
+
+--==================================================
+-- GUI
+--==================================================
+
+local Gui = Instance.new("ScreenGui")
+Gui.Name = "SuspensionEditor"
+Gui.ResetOnSpawn = false
+Gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+Gui.IgnoreGuiInset = false
+Gui.Parent = PlayerGui
+
+--==================================================
+-- ГЛАВНОЕ ОКНО (адаптивный размер под экран телефона)
+--==================================================
+
+local Main = Instance.new("Frame")
+Main.Name = "Main"
+Main.AnchorPoint = Vector2.new(0.5, 0.5)
+Main.Size = UDim2.new(0.46, 0, 0.4, 0)
+Main.Position = UDim2.fromScale(0.5, 0.5)
+Main.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+Main.BorderSizePixel = 0
+Main.Parent = Gui
+
+local MainConstraint = Instance.new("UISizeConstraint")
+MainConstraint.MinSize = Vector2.new(150, 220)
+MainConstraint.MaxSize = Vector2.new(240, 310)
+MainConstraint.Parent = Main
+
+local MainCorner = Instance.new("UICorner")
+MainCorner.CornerRadius = UDim.new(0, 14)
+MainCorner.Parent = Main
+
+local MainPadding = Instance.new("UIPadding")
+MainPadding.PaddingLeft = UDim.new(0, 10)
+MainPadding.PaddingRight = UDim.new(0, 10)
+MainPadding.PaddingTop = UDim.new(0, 8)
+MainPadding.PaddingBottom = UDim.new(0, 8)
+MainPadding.Parent = Main
+
+--==================================================
+-- ФИКСИРОВАННЫЕ ВЫСОТЫ БЛОКОВ
+--==================================================
+
+local HEADER_HEIGHT = 32
+local TABS_HEIGHT = 30
+local REFRESH_HEIGHT = 30
+local GAP = 8
+
+--==================================================
+-- ШАПКА (заголовок + закрытие)
+--==================================================
+
+local Header = Instance.new("Frame")
+Header.Name = "Header"
+Header.Size = UDim2.new(1, 0, 0, HEADER_HEIGHT)
+Header.Position = UDim2.fromOffset(0, 0)
+Header.BackgroundTransparency = 1
+Header.Parent = Main
+
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, -66, 1, 0)
+Title.Position = UDim2.fromOffset(0, 0)
+Title.BackgroundTransparency = 1
+Title.Text = "SUSPENSION EDITOR"
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.TextSize = 12
+Title.Font = Enum.Font.GothamBold
+Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.TextScaled = false
+Title.TextTruncate = Enum.TextTruncate.AtEnd
+Title.Parent = Header
+
+--==================================================
+-- КНОПКА СКРЫТИЯ ОКНА
+--==================================================
+
+local Hide = Instance.new("TextButton")
+Hide.Size = UDim2.fromOffset(30, 30)
+Hide.Position = UDim2.new(1, -64, 0, (HEADER_HEIGHT - 30) / 2)
+Hide.BackgroundColor3 = Color3.fromRGB(45, 45, 52)
+Hide.Text = "–"
+Hide.TextColor3 = Color3.fromRGB(230, 230, 235)
+Hide.TextSize = 18
+Hide.Font = Enum.Font.GothamBold
+Hide.Parent = Header
+
+local HideCorner = Instance.new("UICorner")
+HideCorner.CornerRadius = UDim.new(0, 8)
+HideCorner.Parent = Hide
+
+--==================================================
+-- КНОПКА ЗАКРЫТИЯ
+--==================================================
+
+local Close = Instance.new("TextButton")
+Close.Size = UDim2.fromOffset(30, 30)
+Close.Position = UDim2.new(1, -30, 0, (HEADER_HEIGHT - 30) / 2)
+Close.BackgroundColor3 = Color3.fromRGB(180, 55, 55)
+Close.Text = "×"
+Close.TextColor3 = Color3.fromRGB(255, 255, 255)
+Close.TextSize = 18
+Close.Font = Enum.Font.GothamBold
+Close.Parent = Header
+
+local CloseCorner = Instance.new("UICorner")
+CloseCorner.CornerRadius = UDim.new(0, 10)
+CloseCorner.Parent = Close
+
+Close.MouseButton1Click:Connect(function()
+	Gui:Destroy()
+end)
+
+--==================================================
+-- ПЛАВАЮЩАЯ КНОПКА "A" (показывается, когда окно скрыто)
+--==================================================
+
+local ToggleButton = Instance.new("TextButton")
+ToggleButton.Name = "ToggleButton"
+ToggleButton.AnchorPoint = Vector2.new(0.5, 0.5)
+ToggleButton.Size = UDim2.fromOffset(40, 40)
+ToggleButton.Position = UDim2.new(1, -35, 0.5, 0)
+ToggleButton.BackgroundColor3 = Color3.fromRGB(65, 120, 220)
+ToggleButton.Text = "A"
+ToggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+ToggleButton.TextSize = 20
+ToggleButton.Font = Enum.Font.Bangers
+ToggleButton.AutoButtonColor = false
+ToggleButton.Visible = false
+ToggleButton.ZIndex = 10
+ToggleButton.Parent = Gui
+
+local ToggleCorner = Instance.new("UICorner")
+ToggleCorner.CornerRadius = UDim.new(1, 0)
+ToggleCorner.Parent = ToggleButton
+
+local ToggleStroke = Instance.new("UIStroke")
+ToggleStroke.Color = Color3.fromRGB(255, 255, 255)
+ToggleStroke.Thickness = 2
+ToggleStroke.Transparency = 0.5
+ToggleStroke.Parent = ToggleButton
+
+--==================================================
+-- ЛОГИКА СКРЫТИЯ / ПОКАЗА ОКНА
+--==================================================
+
+Hide.MouseButton1Click:Connect(function()
+	Main.Visible = false
+	ToggleButton.Visible = true
+end)
+
+ToggleButton.MouseButton1Click:Connect(function()
+	Main.Visible = true
+	ToggleButton.Visible = false
+end)
+
+--==================================================
+-- ПЕРЕТАСКИВАНИЕ ПЛАВАЮЩЕЙ КНОПКИ (мышь + тач)
+--==================================================
+
+local toggleDragging = false
+local toggleDragStart
+local toggleStartPosition
+
+ToggleButton.InputBegan:Connect(function(input)
+	if IsPressInput(input) then
+		toggleDragging = true
+		toggleDragStart = input.Position
+		toggleStartPosition = ToggleButton.Position
+	end
+end)
+
+ToggleButton.InputEnded:Connect(function(input)
+	if IsPressInput(input) then
+		toggleDragging = false
+	end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+	if toggleDragging and IsMoveInput(input) then
+		local delta = input.Position - toggleDragStart
+
+		ToggleButton.Position = UDim2.new(
+			toggleStartPosition.X.Scale,
+			toggleStartPosition.X.Offset + delta.X,
+			toggleStartPosition.Y.Scale,
+			toggleStartPosition.Y.Offset + delta.Y
+		)
+	end
+end)
+
+--==================================================
+-- ПЕРЕТАСКИВАНИЕ ОКНА (мышь + тач)
+--==================================================
+
+local dragging = false
+local dragStart
+local startPosition
+
+Title.InputBegan:Connect(function(input)
+	if IsPressInput(input) then
+		dragging = true
+		dragStart = input.Position
+		startPosition = Main.Position
+	end
+end)
+
+Title.InputEnded:Connect(function(input)
+	if IsPressInput(input) then
+		dragging = false
+	end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+	if dragging and IsMoveInput(input) then
+		local delta = input.Position - dragStart
+
+		Main.Position = UDim2.new(
+			startPosition.X.Scale,
+			startPosition.X.Offset + delta.X,
+			startPosition.Y.Scale,
+			startPosition.Y.Offset + delta.Y
+		)
+	end
+end)
+
+--==================================================
+-- ВЫБОР ОСИ
+--==================================================
+
+local Tabs = Instance.new("Frame")
+Tabs.Size = UDim2.new(1, 0, 0, TABS_HEIGHT)
+Tabs.Position = UDim2.fromOffset(0, HEADER_HEIGHT + GAP)
+Tabs.BackgroundTransparency = 1
+Tabs.Parent = Main
+
+local TabLayout = Instance.new("UIListLayout")
+TabLayout.FillDirection = Enum.FillDirection.Horizontal
+TabLayout.Padding = UDim.new(0, 8)
+TabLayout.Parent = Tabs
+
+local SelectedMode = "All"
+local ModeButtons = {}
+
+local Modes = {
+	{ Name = "Front", Text = "ПЕРЕД" },
+	{ Name = "Rear", Text = "ЗАД" },
+	{ Name = "All", Text = "ПОЛНОСТЬЮ" },
+}
+
+--==================================================
+-- ПОЛУЧЕНИЕ ВЫБРАННЫХ ПРУЖИН
+--==================================================
+
+local function GetSelectedSprings()
+	if SelectedMode == "Front" then
+		return { Springs.FrontLeft, Springs.FrontRight }
+	elseif SelectedMode == "Rear" then
+		return { Springs.RearLeft, Springs.RearRight }
+	else
+		return { Springs.FrontLeft, Springs.FrontRight, Springs.RearLeft, Springs.RearRight }
+	end
+end
+
+--==================================================
+-- СОЗДАНИЕ КНОПОК ОСЕЙ
+--==================================================
+
+for _, Mode in ipairs(Modes) do
+	local Button = Instance.new("TextButton")
+
+	Button.Name = Mode.Name
+	Button.Size = UDim2.new(1 / 3, -6, 1, 0)
+	Button.BackgroundColor3 = Color3.fromRGB(45, 45, 52)
+	Button.Text = Mode.Text
+	Button.TextColor3 = Color3.fromRGB(210, 210, 210)
+	Button.TextSize = 11
+	Button.Font = Enum.Font.GothamBold
+	Button.Parent = Tabs
+
+	local Corner = Instance.new("UICorner")
+	Corner.CornerRadius = UDim.new(0, 7)
+	Corner.Parent = Button
+
+	ModeButtons[Mode.Name] = Button
+
+	Button.MouseButton1Click:Connect(function()
+		SelectedMode = Mode.Name
+
+		for Name, Btn in pairs(ModeButtons) do
+			if Name == SelectedMode then
+				Btn.BackgroundColor3 = Color3.fromRGB(65, 120, 220)
+				Btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+			else
+				Btn.BackgroundColor3 = Color3.fromRGB(45, 45, 52)
+				Btn.TextColor3 = Color3.fromRGB(210, 210, 210)
+			end
+		end
+	end)
+end
+
+ModeButtons.All.BackgroundColor3 = Color3.fromRGB(65, 120, 220)
+ModeButtons.All.TextColor3 = Color3.fromRGB(255, 255, 255)
+
+--==================================================
+-- ФОРМАТ ЧИСЕЛ
+--==================================================
+
+local function FormatNumber(Value, Decimals)
+	if Decimals == 0 then
+		return tostring(math.floor(Value + 0.5))
+	end
+
+	return string.format("%." .. Decimals .. "f", Value)
+end
+
+--==================================================
+-- ПРОКРУЧИВАЕМАЯ ОБЛАСТЬ С ПОЛЗУНКАМИ
+-- (на маленьких экранах контент не обрезается, а скроллится)
+--==================================================
+
+local Content = Instance.new("ScrollingFrame")
+Content.Name = "Content"
+Content.Position = UDim2.fromOffset(0, HEADER_HEIGHT + GAP + TABS_HEIGHT + GAP)
+Content.Size = UDim2.new(
+	1,
+	0,
+	1,
+	-(HEADER_HEIGHT + GAP + TABS_HEIGHT + GAP + GAP + REFRESH_HEIGHT + GAP)
+)
+Content.BackgroundTransparency = 1
+Content.BorderSizePixel = 0
+Content.ScrollBarThickness = 4
+Content.ScrollBarImageColor3 = Color3.fromRGB(90, 90, 100)
+Content.CanvasSize = UDim2.new(0, 0, 0, 0)
+Content.AutomaticCanvasSize = Enum.AutomaticSize.Y
+Content.Parent = Main
+
+local ContentLayout = Instance.new("UIListLayout")
+ContentLayout.FillDirection = Enum.FillDirection.Vertical
+ContentLayout.Padding = UDim.new(0, 8)
+ContentLayout.SortOrder = Enum.SortOrder.LayoutOrder
+ContentLayout.Parent = Content
+
+--==================================================
+-- ПОЛЯ ВВОДА ЗНАЧЕНИЙ
+--==================================================
+
+local Sliders = {}
+
+local function CreateSlider(Property, Order)
+	local Data = RANGES[Property]
+
+	local Container = Instance.new("Frame")
+	Container.Name = Property
+	Container.Size = UDim2.new(1, 0, 0, 40)
+	Container.BackgroundTransparency = 1
+	Container.LayoutOrder = Order
+	Container.Parent = Content
+
+	-- Название
+
+	local Label = Instance.new("TextLabel")
+	Label.Size = UDim2.new(1, 0, 0, 14)
+	Label.Position = UDim2.fromOffset(0, 0)
+	Label.BackgroundTransparency = 1
+	Label.Text = Property
+	Label.TextColor3 = Color3.fromRGB(230, 230, 235)
+	Label.TextSize = 11
+	Label.Font = Enum.Font.GothamBold
+	Label.TextXAlignment = Enum.TextXAlignment.Left
+	Label.Parent = Container
+
+	-- Строка: поле ввода + кнопка "Ввод"
+
+	local Row = Instance.new("Frame")
+	Row.Size = UDim2.new(1, 0, 0, 22)
+	Row.Position = UDim2.fromOffset(0, 16)
+	Row.BackgroundTransparency = 1
+	Row.Parent = Container
+
+	local Box = Instance.new("TextBox")
+	Box.Size = UDim2.new(1, -48, 1, 0)
+	Box.Position = UDim2.fromOffset(0, 0)
+	Box.BackgroundColor3 = Color3.fromRGB(45, 45, 52)
+	Box.Text = FormatNumber(Data.Min, Data.Decimals)
+	Box.PlaceholderText = "0"
+	Box.TextColor3 = Color3.fromRGB(255, 255, 255)
+	Box.PlaceholderColor3 = Color3.fromRGB(140, 140, 148)
+	Box.TextSize = 11
+	Box.Font = Enum.Font.Gotham
+	Box.ClearTextOnFocus = false
+	Box.Parent = Row
+
+	local BoxCorner = Instance.new("UICorner")
+	BoxCorner.CornerRadius = UDim.new(0, 6)
+	BoxCorner.Parent = Box
+
+	local BoxPadding = Instance.new("UIPadding")
+	BoxPadding.PaddingLeft = UDim.new(0, 8)
+	BoxPadding.PaddingRight = UDim.new(0, 8)
+	BoxPadding.Parent = Box
+
+	local Apply = Instance.new("TextButton")
+	Apply.Size = UDim2.new(0, 42, 1, 0)
+	Apply.Position = UDim2.new(1, -42, 0, 0)
+	Apply.BackgroundColor3 = Color3.fromRGB(65, 120, 220)
+	Apply.Text = "ВВОД"
+	Apply.TextColor3 = Color3.fromRGB(255, 255, 255)
+	Apply.TextSize = 10
+	Apply.Font = Enum.Font.GothamBold
+	Apply.Parent = Row
+
+	local ApplyCorner = Instance.new("UICorner")
+	ApplyCorner.CornerRadius = UDim.new(0, 6)
+	ApplyCorner.Parent = Apply
+
+	local CurrentValue = Data.Min
+
+	--==================================================
+	-- ИЗМЕНЕНИЕ ЗНАЧЕНИЯ
+	--==================================================
+
+	local function SetValue(Value)
+		Value = math.clamp(Value, Data.Min, Data.Max)
+
+		if Data.Decimals == 0 then
+			Value = math.floor(Value + 0.5)
+		else
+			local Multiplier = 10 ^ Data.Decimals
+			Value = math.floor(Value * Multiplier + 0.5) / Multiplier
+		end
+
+		CurrentValue = Value
+		Box.Text = FormatNumber(Value, Data.Decimals)
+
+		-- Применяем значение ко всем выбранным колёсам
+
+		for _, Spring in ipairs(GetSelectedSprings()) do
+			if Spring and Spring:IsA("SpringConstraint") then
+				pcall(function()
+					Spring[Property] = Value
+				end)
+			end
+		end
+	end
+
+	--==================================================
+	-- ПРИМЕНЕНИЕ ВВЕДЁННОГО ЗНАЧЕНИЯ
+	--==================================================
+
+	local function ApplyFromBox()
+		local Number = tonumber(Box.Text)
+
+		if Number then
+			SetValue(Number)
+		else
+			-- Некорректный ввод — возвращаем текущее значение
+
+			Box.Text = FormatNumber(CurrentValue, Data.Decimals)
+		end
+	end
+
+	Apply.MouseButton1Click:Connect(ApplyFromBox)
+
+	Box.FocusLost:Connect(function(EnterPressed)
+		if EnterPressed then
+			ApplyFromBox()
+		end
+	end)
+
+	Sliders[Property] = {
+		SetValue = SetValue,
+		GetValue = function()
+			return CurrentValue
+		end,
+	}
+end
+
+--==================================================
+-- СОЗДАЁМ ПОЛЯ ВВОДА
+--==================================================
+
+CreateSlider("Damping", 1)
+CreateSlider("FreeLength", 2)
+CreateSlider("MaxForce", 3)
+CreateSlider("Stiffness", 4)
+
+--==================================================
+-- КНОПКИ ОБНОВЛЕНИЯ (закреплены внизу окна)
+--==================================================
+
+local Footer = Instance.new("Frame")
+Footer.Size = UDim2.new(1, 0, 0, REFRESH_HEIGHT)
+Footer.Position = UDim2.new(0, 0, 1, -REFRESH_HEIGHT)
+Footer.BackgroundTransparency = 1
+Footer.Parent = Main
+
+local FooterLayout = Instance.new("UIListLayout")
+FooterLayout.FillDirection = Enum.FillDirection.Horizontal
+FooterLayout.Padding = UDim.new(0, 8)
+FooterLayout.Parent = Footer
+
+local Refresh = Instance.new("TextButton")
+Refresh.Size = UDim2.new(0.5, -4, 1, 0)
+Refresh.BackgroundColor3 = Color3.fromRGB(45, 45, 52)
+Refresh.Text = "ЗНАЧЕНИЯ"
+Refresh.TextColor3 = Color3.fromRGB(230, 230, 235)
+Refresh.TextSize = 10
+Refresh.Font = Enum.Font.GothamBold
+Refresh.Parent = Footer
+
+local RefreshCorner = Instance.new("UICorner")
+RefreshCorner.CornerRadius = UDim.new(0, 9)
+RefreshCorner.Parent = Refresh
+
+local RefreshData = Instance.new("TextButton")
+RefreshData.Size = UDim2.new(0.5, -4, 1, 0)
+RefreshData.BackgroundColor3 = Color3.fromRGB(65, 120, 220)
+RefreshData.Text = "ДАННЫЕ"
+RefreshData.TextColor3 = Color3.fromRGB(255, 255, 255)
+RefreshData.TextSize = 10
+RefreshData.Font = Enum.Font.GothamBold
+RefreshData.Parent = Footer
+
+local RefreshDataCorner = Instance.new("UICorner")
+RefreshDataCorner.CornerRadius = UDim.new(0, 9)
+RefreshDataCorner.Parent = RefreshData
+
+--==================================================
+-- ЗАГРУЗКА ТЕКУЩИХ ЗНАЧЕНИЙ
+--==================================================
+
+local function LoadValues()
+	local SelectedSprings = GetSelectedSprings()
+
+	if #SelectedSprings == 0 then
+		return
+	end
+
+	local Spring = SelectedSprings[1]
+
+	if not Spring then
+		return
+	end
+
+	for Property, Slider in pairs(Sliders) do
+		local Success, Value = pcall(function()
+			return Spring[Property]
+		end)
+
+		if Success and typeof(Value) == "number" then
+			Slider.SetValue(Value)
+		end
+	end
+end
+
+--==================================================
+-- ПОВТОРНЫЙ ПОИСК ПОДВЕСКИ
+-- (на случай респавна машины / смены транспорта)
+--==================================================
+
+local function RefreshSprings()
+	local RefreshSuccess, RefreshResult = pcall(getSprings)
+
+	if RefreshSuccess then
+		Springs = RefreshResult
+		LoadValues()
+	else
+		warn("Не удалось обновить подвеску:", RefreshResult)
+	end
+end
+
+--==================================================
+-- ОБНОВЛЕНИЕ
+--==================================================
+
+Refresh.MouseButton1Click:Connect(function()
+	LoadValues()
+end)
+
+RefreshData.MouseButton1Click:Connect(function()
+	RefreshSprings()
+end)
+
+--==================================================
+-- ОБНОВЛЕНИЕ ПРИ СМЕНЕ ОСИ
+--==================================================
+
+for _, Button in pairs(ModeButtons) do
+	Button.MouseButton1Click:Connect(function()
+		task.wait()
+		LoadValues()
+	end)
+end
+
+--==================================================
+-- ПЕРВИЧНАЯ ЗАГРУЗКА
+--==================================================
+
+task.wait(1)
+
+LoadValues()
+
+print("======================================")
+print("SUSPENSION EDITOR (MOBILE)")
+print("Новая версия запущена.")
+print("Предыдущая версия автоматически удалена.")
+print("======================================")
