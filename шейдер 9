@@ -1,0 +1,2762 @@
+--==============================================================
+-- HYBRID RTX SHADERS v9
+-- MOBILE / INJECTOR READY
+--
+-- SSR STYLE = псевдо-SSR через Roblox Environment Reflections
+-- REFLECTION = встроенные EnvironmentSpecular/EnvironmentDiffuse
+--==============================================================
+
+local Players = game:GetService("Players")
+local Lighting = game:GetService("Lighting")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+
+local Player = Players.LocalPlayer
+if not Player then
+	warn("[HYBRID RTX] LocalPlayer не найден")
+	return
+end
+
+local PlayerGui = Player:WaitForChild("PlayerGui")
+
+print("================================================")
+print("[HYBRID RTX v9] START")
+print("================================================")
+
+--==============================================================
+-- CONFIG
+--==============================================================
+
+local Config = {
+
+	Enabled = false,
+
+	--------------------------------------------------
+	-- REFLECTION
+	--------------------------------------------------
+
+	ReflectionEnabled = true,
+	SSRStyle = true,
+
+	EnvironmentSpecular = 1,
+	EnvironmentDiffuse = 1,
+
+	FloorReflection = 0.95,
+	WallReflection = 0.72,
+	ObjectReflection = 0.45,
+
+	MetalMode = true,
+	SmoothMode = true,
+	GlassMode = false,
+
+	--------------------------------------------------
+	-- SURFACE DETECTION
+	--------------------------------------------------
+
+	ProcessFloor = true,
+	ProcessWalls = true,
+	ProcessObjects = true,
+
+	FloorMinSize = 6,
+	WallMinSize = 6,
+
+	MaxProcessedParts = 3500,
+
+	--------------------------------------------------
+	-- BLOOM
+	--------------------------------------------------
+
+	BloomEnabled = true,
+	BloomIntensity = 5.5,
+	BloomSize = 72,
+	BloomThreshold = 0,
+
+	--------------------------------------------------
+	-- COLOR
+	--------------------------------------------------
+
+	ColorEnabled = true,
+	Brightness = 0.03,
+	Contrast = 1.25,
+	Saturation = 1.45,
+
+	--------------------------------------------------
+	-- SUN
+	--------------------------------------------------
+
+	SunEnabled = true,
+	SunIntensity = 0.35,
+	SunSpread = 0.95,
+
+	--------------------------------------------------
+	-- ATMOSPHERE
+	--------------------------------------------------
+
+	AtmosphereEnabled = true,
+	AtmosphereDensity = 0.025,
+	AtmosphereHaze = 0.25,
+	AtmosphereGlare = 0.65,
+
+	--------------------------------------------------
+	-- DOF
+	--------------------------------------------------
+
+	DOFEnabled = false,
+	DOFNearIntensity = 0.02,
+	DOFFarIntensity = 0.10,
+	DOFFocusDistance = 70,
+	DOFRadius = 3,
+
+	--------------------------------------------------
+	-- EXTRA
+	--------------------------------------------------
+
+	Exposure = 0.15,
+	GlobalShadows = true,
+
+	--------------------------------------------------
+	-- UPDATE
+	--------------------------------------------------
+
+	UpdateInterval = 1,
+
+	--------------------------------------------------
+	-- PERFORMANCE
+	--------------------------------------------------
+
+	PerformanceMode = false
+}
+
+--==============================================================
+-- SAVE ORIGINAL LIGHTING
+--==============================================================
+
+local OriginalLighting = {}
+
+pcall(function()
+
+	OriginalLighting.Ambient = Lighting.Ambient
+	OriginalLighting.OutdoorAmbient = Lighting.OutdoorAmbient
+	OriginalLighting.Brightness = Lighting.Brightness
+	OriginalLighting.ExposureCompensation = Lighting.ExposureCompensation
+	OriginalLighting.GlobalShadows = Lighting.GlobalShadows
+	OriginalLighting.EnvironmentSpecularScale =
+		Lighting.EnvironmentSpecularScale
+	OriginalLighting.EnvironmentDiffuseScale =
+		Lighting.EnvironmentDiffuseScale
+
+end)
+
+--==============================================================
+-- CLEAN OLD GUI / EFFECTS
+--==============================================================
+
+pcall(function()
+
+	local oldGui =
+		PlayerGui:FindFirstChild("HybridRTXv9")
+
+	if oldGui then
+		oldGui:Destroy()
+	end
+
+end)
+
+pcall(function()
+
+	local oldFolder =
+		Lighting:FindFirstChild("HybridRTXv9Effects")
+
+	if oldFolder then
+		oldFolder:Destroy()
+	end
+
+end)
+
+--==============================================================
+-- EFFECT FOLDER
+--==============================================================
+
+local Effects =
+	Instance.new("Folder")
+
+Effects.Name =
+	"HybridRTXv9Effects"
+
+Effects.Parent =
+	Lighting
+
+--==============================================================
+-- BLOOM
+--==============================================================
+
+local Bloom =
+	Instance.new("BloomEffect")
+
+Bloom.Name =
+	"RTX_Bloom"
+
+Bloom.Enabled = false
+
+Bloom.Intensity =
+	Config.BloomIntensity
+
+Bloom.Size =
+	Config.BloomSize
+
+Bloom.Threshold =
+	Config.BloomThreshold
+
+Bloom.Parent =
+	Effects
+
+--==============================================================
+-- COLOR
+--==============================================================
+
+local ColorCorrection =
+	Instance.new("ColorCorrectionEffect")
+
+ColorCorrection.Name =
+	"RTX_Color"
+
+ColorCorrection.Enabled = false
+
+ColorCorrection.Brightness =
+	Config.Brightness
+
+ColorCorrection.Contrast =
+	Config.Contrast
+
+ColorCorrection.Saturation =
+	Config.Saturation
+
+ColorCorrection.TintColor =
+	Color3.fromRGB(255,245,242)
+
+ColorCorrection.Parent =
+	Effects
+
+--==============================================================
+-- SUN RAYS
+--==============================================================
+
+local SunRays =
+	Instance.new("SunRaysEffect")
+
+SunRays.Name =
+	"RTX_SunRays"
+
+SunRays.Enabled = false
+
+SunRays.Intensity =
+	Config.SunIntensity
+
+SunRays.Spread =
+	Config.SunSpread
+
+SunRays.Parent =
+	Effects
+
+--==============================================================
+-- DOF
+--==============================================================
+
+local DOF =
+	Instance.new("DepthOfFieldEffect")
+
+DOF.Name =
+	"RTX_DOF"
+
+DOF.Enabled = false
+
+DOF.NearIntensity =
+	Config.DOFNearIntensity
+
+DOF.FarIntensity =
+	Config.DOFFarIntensity
+
+DOF.FocusDistance =
+	Config.DOFFocusDistance
+
+DOF.InFocusRadius =
+	Config.DOFRadius
+
+DOF.Parent =
+	Effects
+
+--==============================================================
+-- ATMOSPHERE
+--==============================================================
+
+local Atmosphere =
+	Instance.new("Atmosphere")
+
+Atmosphere.Name =
+	"RTX_Atmosphere"
+
+Atmosphere.Density =
+	Config.AtmosphereDensity
+
+Atmosphere.Haze =
+	Config.AtmosphereHaze
+
+Atmosphere.Glare =
+	Config.AtmosphereGlare
+
+Atmosphere.Color =
+	Color3.fromRGB(215,225,235)
+
+Atmosphere.Decay =
+	Color3.fromRGB(100,105,115)
+
+--==============================================================
+-- ORIGINAL PART DATA
+--==============================================================
+
+local OriginalParts = {}
+
+local ProcessedParts = {}
+
+local function SaveOriginal(part)
+
+	if not part:IsA("BasePart") then
+		return
+	end
+
+	if OriginalParts[part] then
+		return
+	end
+
+	OriginalParts[part] = {
+
+		Material = part.Material,
+		Reflectance = part.Reflectance,
+		Transparency = part.Transparency
+
+	}
+
+end
+
+--==============================================================
+-- FLOOR DETECTION
+--==============================================================
+
+local function IsFloor(part)
+
+	if not part:IsA("BasePart") then
+		return false
+	end
+
+	local s =
+		part.Size
+
+	local horizontal =
+		math.max(s.X,s.Z)
+
+	local vertical =
+		math.min(s.X,s.Z)
+
+	if horizontal < Config.FloorMinSize then
+		return false
+	end
+
+	if s.Y <= horizontal * 0.30 then
+		return true
+	end
+
+	return false
+end
+
+--==============================================================
+-- WALL DETECTION
+--==============================================================
+
+local function IsWall(part)
+
+	if not part:IsA("BasePart") then
+		return false
+	end
+
+	local s =
+		part.Size
+
+	local xWall =
+		s.Y >= Config.WallMinSize
+		and s.X >= Config.WallMinSize * 0.5
+		and s.Y > s.Z * 1.4
+
+	local zWall =
+		s.Y >= Config.WallMinSize
+		and s.Z >= Config.WallMinSize * 0.5
+		and s.Y > s.X * 1.4
+
+	return xWall or zWall
+end
+
+--==============================================================
+-- APPLY REFLECTIVE MATERIAL
+--==============================================================
+
+local function ApplyReflectiveMaterial(
+	part,
+	strength,
+	mode
+)
+
+	if not part:IsA("BasePart") then
+		return
+	end
+
+	if part:IsDescendantOf(Effects) then
+		return
+	end
+
+	SaveOriginal(part)
+
+	--------------------------------------------------
+	-- GLASS
+	--------------------------------------------------
+
+	if Config.GlassMode then
+
+		pcall(function()
+
+			part.Material =
+				Enum.Material.Glass
+
+			part.Reflectance =
+				math.clamp(
+					strength * 0.12,
+					0,
+					0.15
+				)
+
+		end)
+
+		return
+	end
+
+	--------------------------------------------------
+	-- METAL
+	--------------------------------------------------
+
+	if Config.MetalMode then
+
+		pcall(function()
+
+			part.Material =
+				Enum.Material.Metal
+
+			-- Reflectance оставляем небольшим:
+			-- основной эффект идёт через
+			-- EnvironmentSpecularScale.
+
+			part.Reflectance =
+				math.clamp(
+					strength * 0.08,
+					0,
+					0.08
+				)
+
+		end)
+
+		return
+	end
+
+	--------------------------------------------------
+	-- SMOOTH
+	--------------------------------------------------
+
+	if Config.SmoothMode then
+
+		pcall(function()
+
+			part.Material =
+				Enum.Material.SmoothPlastic
+
+			part.Reflectance =
+				math.clamp(
+					strength * 0.15,
+					0,
+					0.15
+				)
+
+		end)
+
+	end
+end
+
+--==============================================================
+-- PROCESS WORLD
+--==============================================================
+
+local function ProcessWorld()
+
+	if not Config.Enabled then
+		return
+	end
+
+	local processed =
+		0
+
+	local floors =
+		0
+
+	local walls =
+		0
+
+	local objects =
+		0
+
+	for _,part in ipairs(
+		workspace:GetDescendants()
+	) do
+
+		if processed >=
+			Config.MaxProcessedParts then
+
+			break
+		end
+
+		if part:IsA("BasePart") then
+
+			if not part:IsDescendantOf(
+				Player.Character or Instance.new("Folder")
+			) then
+
+				local ok =
+					pcall(function()
+
+						--------------------------------------------------
+						-- FLOOR
+						--------------------------------------------------
+
+						if Config.ProcessFloor
+							and IsFloor(part) then
+
+							ApplyReflectiveMaterial(
+								part,
+								Config.FloorReflection,
+								"Floor"
+							)
+
+							ProcessedParts[part] = true
+
+							floors += 1
+							processed += 1
+
+						--------------------------------------------------
+						-- WALL
+						--------------------------------------------------
+
+						elseif Config.ProcessWalls
+							and IsWall(part) then
+
+							ApplyReflectiveMaterial(
+								part,
+								Config.WallReflection,
+								"Wall"
+							)
+
+							ProcessedParts[part] = true
+
+							walls += 1
+							processed += 1
+
+						--------------------------------------------------
+						-- OBJECTS
+						--------------------------------------------------
+
+						elseif Config.ProcessObjects
+							and not part:IsA("Terrain") then
+
+							ApplyReflectiveMaterial(
+								part,
+								Config.ObjectReflection,
+								"Object"
+							)
+
+							ProcessedParts[part] = true
+
+							objects += 1
+							processed += 1
+
+						end
+
+					end)
+
+				if not ok then
+					-- intentionally ignored
+				end
+
+			end
+		end
+	end
+
+	print(
+		"[HYBRID RTX]",
+		"Floor:",floors,
+		"Walls:",walls,
+		"Objects:",objects,
+		"Total:",processed
+	)
+
+end
+
+--==============================================================
+-- LIGHTING
+--==============================================================
+
+local function ApplyLighting()
+
+	if not Config.Enabled then
+		return
+	end
+
+	--------------------------------------------------
+	-- FUTURE
+	--------------------------------------------------
+
+	pcall(function()
+
+		Lighting.Technology =
+			Enum.Technology.Future
+
+	end)
+
+	--------------------------------------------------
+	-- ENVIRONMENT REFLECTION
+	--------------------------------------------------
+
+	pcall(function()
+
+		if Config.ReflectionEnabled then
+
+			Lighting.EnvironmentSpecularScale =
+				math.clamp(
+					Config.EnvironmentSpecular,
+					0,
+					1
+				)
+
+			Lighting.EnvironmentDiffuseScale =
+				math.clamp(
+					Config.EnvironmentDiffuse,
+					0,
+					1
+				)
+
+		else
+
+			Lighting.EnvironmentSpecularScale =
+				0
+
+			Lighting.EnvironmentDiffuseScale =
+				0
+
+		end
+
+	end)
+
+	--------------------------------------------------
+	-- SHADOWS
+	--------------------------------------------------
+
+	pcall(function()
+
+		Lighting.GlobalShadows =
+			Config.GlobalShadows
+
+	end)
+
+	--------------------------------------------------
+	-- AMBIENT
+	--------------------------------------------------
+
+	pcall(function()
+
+		if Config.ReflectionEnabled then
+
+			Lighting.Ambient =
+				Color3.fromRGB(
+					12,
+					12,
+					15
+				)
+
+			Lighting.OutdoorAmbient =
+				Color3.fromRGB(
+					20,
+					20,
+					24
+				)
+
+		else
+
+			Lighting.Ambient =
+				Color3.fromRGB(
+					45,
+					42,
+					45
+				)
+
+		end
+
+	end)
+
+	--------------------------------------------------
+	-- EXPOSURE
+	--------------------------------------------------
+
+	pcall(function()
+
+		Lighting.ExposureCompensation =
+			Config.Exposure
+
+	end)
+
+end
+
+--==============================================================
+-- EFFECT UPDATE
+--==============================================================
+
+local function ApplyEffects()
+
+	if not Config.Enabled then
+		return
+	end
+
+	--------------------------------------------------
+	-- BLOOM
+	--------------------------------------------------
+
+	Bloom.Enabled =
+		Config.BloomEnabled
+
+	Bloom.Intensity =
+		math.clamp(
+			Config.BloomIntensity,
+			0,
+			10
+		)
+
+	Bloom.Size =
+		math.clamp(
+			Config.BloomSize,
+			0,
+			100
+		)
+
+	Bloom.Threshold =
+		math.clamp(
+			Config.BloomThreshold,
+			0,
+			10
+		)
+
+	--------------------------------------------------
+	-- COLOR
+	--------------------------------------------------
+
+	ColorCorrection.Enabled =
+		Config.ColorEnabled
+
+	ColorCorrection.Brightness =
+		math.clamp(
+			Config.Brightness,
+			-1,
+			1
+		)
+
+	ColorCorrection.Contrast =
+		math.clamp(
+			Config.Contrast,
+			-1,
+			3
+		)
+
+	ColorCorrection.Saturation =
+		math.clamp(
+			Config.Saturation,
+			-1,
+			3
+		)
+
+	--------------------------------------------------
+	-- SUN
+	--------------------------------------------------
+
+	SunRays.Enabled =
+		Config.SunEnabled
+
+	SunRays.Intensity =
+		math.clamp(
+			Config.SunIntensity,
+			0,
+			1
+		)
+
+	SunRays.Spread =
+		math.clamp(
+			Config.SunSpread,
+			0,
+			1
+		)
+
+	--------------------------------------------------
+	-- DOF
+	--------------------------------------------------
+
+	DOF.Enabled =
+		Config.DOFEnabled
+
+	DOF.NearIntensity =
+		math.clamp(
+			Config.DOFNearIntensity,
+			0,
+			1
+		)
+
+	DOF.FarIntensity =
+		math.clamp(
+			Config.DOFFarIntensity,
+			0,
+			1
+		)
+
+	DOF.FocusDistance =
+		math.max(
+			0,
+			Config.DOFFocusDistance
+		)
+
+	DOF.InFocusRadius =
+		math.max(
+			0,
+			Config.DOFRadius
+		)
+
+	--------------------------------------------------
+	-- ATMOSPHERE
+	--------------------------------------------------
+
+	Atmosphere.Density =
+		math.clamp(
+			Config.AtmosphereDensity,
+			0,
+			1
+		)
+
+	Atmosphere.Haze =
+		math.clamp(
+			Config.AtmosphereHaze,
+			0,
+			10
+		)
+
+	Atmosphere.Glare =
+		math.clamp(
+			Config.AtmosphereGlare,
+			0,
+			10
+		)
+
+	if Config.AtmosphereEnabled then
+		Atmosphere.Parent =
+			Lighting
+	else
+		Atmosphere.Parent = nil
+	end
+
+	ApplyLighting()
+
+end
+
+--==============================================================
+-- ENABLE
+--==============================================================
+
+local function EnableShaders()
+
+	print("[HYBRID RTX] Enabling...")
+
+	Config.Enabled =
+		true
+
+	ApplyEffects()
+
+	ProcessWorld()
+
+	print("[HYBRID RTX] ENABLED")
+	print("[HYBRID RTX] Reflection:",Config.ReflectionEnabled)
+	print("[HYBRID RTX] SSR Style:",Config.SSRStyle)
+
+end
+
+--==============================================================
+-- RESTORE
+--==============================================================
+
+local function RestoreParts()
+
+	local restored =
+		0
+
+	for part,data in pairs(
+		OriginalParts
+	) do
+
+		if part
+			and part.Parent then
+
+			pcall(function()
+
+				part.Material =
+					data.Material
+
+				part.Reflectance =
+					data.Reflectance
+
+				part.Transparency =
+					data.Transparency
+
+				restored += 1
+
+			end)
+
+		end
+
+	end
+
+	print(
+		"[HYBRID RTX] Restored:",
+		restored
+	)
+
+end
+
+--==============================================================
+-- DISABLE
+--==============================================================
+
+local function DisableShaders()
+
+	print("[HYBRID RTX] Disabling...")
+
+	Config.Enabled =
+		false
+
+	Bloom.Enabled =
+		false
+
+	ColorCorrection.Enabled =
+		false
+
+	SunRays.Enabled =
+		false
+
+	DOF.Enabled =
+		false
+
+	Atmosphere.Parent =
+		nil
+
+	RestoreParts()
+
+	--------------------------------------------------
+	-- RESTORE LIGHTING
+	--------------------------------------------------
+
+	pcall(function()
+
+		Lighting.Ambient =
+			OriginalLighting.Ambient
+
+		Lighting.OutdoorAmbient =
+			OriginalLighting.OutdoorAmbient
+
+		Lighting.Brightness =
+			OriginalLighting.Brightness
+
+		Lighting.ExposureCompensation =
+			OriginalLighting.ExposureCompensation
+
+		Lighting.GlobalShadows =
+			OriginalLighting.GlobalShadows
+
+		Lighting.EnvironmentSpecularScale =
+			OriginalLighting.EnvironmentSpecularScale
+
+		Lighting.EnvironmentDiffuseScale =
+			OriginalLighting.EnvironmentDiffuseScale
+
+	end)
+
+	print("[HYBRID RTX] Disabled")
+
+end
+
+--==============================================================
+-- PRESETS
+--==============================================================
+
+local function PresetRTX()
+
+	Config.ReflectionEnabled = true
+	Config.SSRStyle = true
+
+	Config.EnvironmentSpecular = 1
+	Config.EnvironmentDiffuse = 1
+
+	Config.FloorReflection = 0.95
+	Config.WallReflection = 0.72
+	Config.ObjectReflection = 0.42
+
+	Config.MetalMode = true
+	Config.SmoothMode = true
+	Config.GlassMode = false
+
+	Config.BloomEnabled = true
+	Config.BloomIntensity = 5.5
+	Config.BloomSize = 72
+	Config.BloomThreshold = 0
+
+	Config.Brightness = 0.03
+	Config.Contrast = 1.25
+	Config.Saturation = 1.45
+
+	Config.SunEnabled = true
+	Config.SunIntensity = 0.35
+	Config.SunSpread = 0.95
+
+	Config.AtmosphereDensity = 0.025
+	Config.AtmosphereHaze = 0.25
+	Config.AtmosphereGlare = 0.65
+
+	Config.Exposure = 0.15
+
+	EnableShaders()
+
+end
+
+local function PresetMirror()
+
+	Config.ReflectionEnabled = true
+	Config.SSRStyle = true
+
+	Config.EnvironmentSpecular = 1
+	Config.EnvironmentDiffuse = 1
+
+	Config.FloorReflection = 1
+	Config.WallReflection = 0.9
+	Config.ObjectReflection = 0.55
+
+	Config.MetalMode = true
+	Config.SmoothMode = false
+	Config.GlassMode = false
+
+	Config.BloomIntensity = 3.5
+	Config.BloomSize = 60
+	Config.BloomThreshold = 0
+
+	Config.Brightness = 0
+	Config.Contrast = 1.2
+	Config.Saturation = 1.25
+
+	Config.Exposure = 0.1
+
+	EnableShaders()
+
+end
+
+local function PresetTikTok()
+
+	Config.ReflectionEnabled = true
+	Config.SSRStyle = true
+
+	Config.EnvironmentSpecular = 1
+	Config.EnvironmentDiffuse = 1
+
+	Config.FloorReflection = 0.98
+	Config.WallReflection = 0.78
+	Config.ObjectReflection = 0.48
+
+	Config.MetalMode = true
+	Config.SmoothMode = true
+	Config.GlassMode = false
+
+	Config.BloomIntensity = 7
+	Config.BloomSize = 85
+	Config.BloomThreshold = 0
+
+	Config.Brightness = 0.06
+	Config.Contrast = 1.4
+	Config.Saturation = 1.7
+
+	Config.SunIntensity = 0.45
+	Config.SunSpread = 1
+
+	Config.AtmosphereDensity = 0.018
+	Config.AtmosphereHaze = 0.2
+	Config.AtmosphereGlare = 0.8
+
+	Config.Exposure = 0.2
+
+	EnableShaders()
+
+end
+
+local function PresetGlass()
+
+	Config.ReflectionEnabled = true
+	Config.SSRStyle = true
+
+	Config.EnvironmentSpecular = 1
+	Config.EnvironmentDiffuse = 1
+
+	Config.FloorReflection = 0.9
+	Config.WallReflection = 0.7
+	Config.ObjectReflection = 0.45
+
+	Config.MetalMode = false
+	Config.SmoothMode = false
+	Config.GlassMode = true
+
+	Config.BloomIntensity = 6
+	Config.BloomSize = 78
+	Config.BloomThreshold = 0
+
+	Config.Brightness = 0.04
+	Config.Contrast = 1.3
+	Config.Saturation = 1.45
+
+	Config.Exposure = 0.15
+
+	EnableShaders()
+
+end
+
+local function PresetNight()
+
+	Config.ReflectionEnabled = true
+	Config.SSRStyle = true
+
+	Config.EnvironmentSpecular = 1
+	Config.EnvironmentDiffuse = 0.9
+
+	Config.FloorReflection = 1
+	Config.WallReflection = 0.8
+	Config.ObjectReflection = 0.45
+
+	Config.MetalMode = true
+	Config.SmoothMode = true
+	Config.GlassMode = false
+
+	Config.BloomIntensity = 6
+	Config.BloomSize = 82
+	Config.BloomThreshold = 0
+
+	Config.Brightness = -0.03
+	Config.Contrast = 1.4
+	Config.Saturation = 1.45
+
+	Config.SunIntensity = 0.12
+	Config.SunSpread = 0.9
+
+	Config.AtmosphereDensity = 0.04
+	Config.AtmosphereHaze = 0.4
+	Config.AtmosphereGlare = 0.7
+
+	Config.Exposure = -0.05
+
+	EnableShaders()
+
+end
+
+--==============================================================
+-- GUI
+--==============================================================
+
+local Gui =
+	Instance.new("ScreenGui")
+
+Gui.Name =
+	"HybridRTXv9"
+
+Gui.ResetOnSpawn =
+	false
+
+Gui.IgnoreGuiInset =
+	true
+
+Gui.ZIndexBehavior =
+	Enum.ZIndexBehavior.Sibling
+
+Gui.Parent =
+	PlayerGui
+
+--==============================================================
+-- OPEN BUTTON
+--==============================================================
+
+local Open =
+	Instance.new("TextButton")
+
+Open.Size =
+	UDim2.new(0,155,0,50)
+
+Open.Position =
+	UDim2.new(0,14,0.5,-25)
+
+Open.BackgroundColor3 =
+	Color3.fromRGB(12,8,17)
+
+Open.Text =
+	"💎 RTX SHADERS"
+
+Open.TextColor3 =
+	Color3.new(1,1,1)
+
+Open.TextSize =
+	15
+
+Open.Font =
+	Enum.Font.GothamBold
+
+Open.BorderSizePixel =
+	0
+
+Open.Parent =
+	Gui
+
+local OpenCorner =
+	Instance.new("UICorner")
+
+OpenCorner.CornerRadius =
+	UDim.new(0,14)
+
+OpenCorner.Parent =
+	Open
+
+local OpenStroke =
+	Instance.new("UIStroke")
+
+OpenStroke.Color =
+	Color3.fromRGB(190,65,255)
+
+OpenStroke.Thickness =
+	2
+
+OpenStroke.Parent =
+	Open
+
+--==============================================================
+-- MAIN
+--==============================================================
+
+local Main =
+	Instance.new("Frame")
+
+Main.Size =
+	UDim2.new(0,365,0,550)
+
+Main.Position =
+	UDim2.new(0.5,-182,0.5,-275)
+
+Main.BackgroundColor3 =
+	Color3.fromRGB(9,8,13)
+
+Main.BorderSizePixel =
+	0
+
+Main.Visible =
+	false
+
+Main.Parent =
+	Gui
+
+local MainCorner =
+	Instance.new("UICorner")
+
+MainCorner.CornerRadius =
+	UDim.new(0,18)
+
+MainCorner.Parent =
+	Main
+
+local MainStroke =
+	Instance.new("UIStroke")
+
+MainStroke.Color =
+	Color3.fromRGB(185,55,255)
+
+MainStroke.Thickness =
+	2
+
+MainStroke.Parent =
+	Main
+
+--==============================================================
+-- TITLE
+--==============================================================
+
+local Title =
+	Instance.new("TextLabel")
+
+Title.Size =
+	UDim2.new(1,-60,0,45)
+
+Title.Position =
+	UDim2.new(0,14,0,2)
+
+Title.BackgroundTransparency =
+	1
+
+Title.Text =
+	"💎 HYBRID RTX v9"
+
+Title.TextColor3 =
+	Color3.new(1,1,1)
+
+Title.TextSize =
+	18
+
+Title.Font =
+	Enum.Font.GothamBold
+
+Title.TextXAlignment =
+	Enum.TextXAlignment.Left
+
+Title.Parent =
+	Main
+
+--==============================================================
+-- CLOSE
+--==============================================================
+
+local Close =
+	Instance.new("TextButton")
+
+Close.Size =
+	UDim2.new(0,40,0,40)
+
+Close.Position =
+	UDim2.new(1,-47,0,4)
+
+Close.BackgroundColor3 =
+	Color3.fromRGB(38,20,44)
+
+Close.Text =
+	"✕"
+
+Close.TextColor3 =
+	Color3.new(1,1,1)
+
+Close.TextSize =
+	17
+
+Close.Font =
+	Enum.Font.GothamBold
+
+Close.BorderSizePixel =
+	0
+
+Close.Parent =
+	Main
+
+local CloseCorner =
+	Instance.new("UICorner")
+
+CloseCorner.CornerRadius =
+	UDim.new(0,11)
+
+CloseCorner.Parent =
+	Close
+
+--==============================================================
+-- TABS
+--==============================================================
+
+local SettingsTab =
+	Instance.new("TextButton")
+
+SettingsTab.Size =
+	UDim2.new(0.5,-7,0,40)
+
+SettingsTab.Position =
+	UDim2.new(0,10,0,48)
+
+SettingsTab.BackgroundColor3 =
+	Color3.fromRGB(80,25,110)
+
+SettingsTab.Text =
+	"⚙ НАСТРОЙКИ"
+
+SettingsTab.TextColor3 =
+	Color3.new(1,1,1)
+
+SettingsTab.TextSize =
+	13
+
+SettingsTab.Font =
+	Enum.Font.GothamBold
+
+SettingsTab.BorderSizePixel =
+	0
+
+SettingsTab.Parent =
+	Main
+
+local STCorner =
+	Instance.new("UICorner")
+
+STCorner.CornerRadius =
+	UDim.new(0,10)
+
+STCorner.Parent =
+	SettingsTab
+
+local PresetsTab =
+	Instance.new("TextButton")
+
+PresetsTab.Size =
+	UDim2.new(0.5,-7,0,40)
+
+PresetsTab.Position =
+	UDim2.new(0.5,3,0,48)
+
+PresetsTab.BackgroundColor3 =
+	Color3.fromRGB(28,20,36)
+
+PresetsTab.Text =
+	"🔥 ПРЕСЕТЫ"
+
+PresetsTab.TextColor3 =
+	Color3.new(1,1,1)
+
+PresetsTab.TextSize =
+	13
+
+PresetsTab.Font =
+	Enum.Font.GothamBold
+
+PresetsTab.BorderSizePixel =
+	0
+
+PresetsTab.Parent =
+	Main
+
+local PTCorner =
+	Instance.new("UICorner")
+
+PTCorner.CornerRadius =
+	UDim.new(0,10)
+
+PTCorner.Parent =
+	PresetsTab
+
+--==============================================================
+-- SETTINGS PAGE
+--==============================================================
+
+local Settings =
+	Instance.new("ScrollingFrame")
+
+Settings.Size =
+	UDim2.new(1,-20,1,-98)
+
+Settings.Position =
+	UDim2.new(0,10,0,94)
+
+Settings.BackgroundTransparency =
+	1
+
+Settings.BorderSizePixel =
+	0
+
+Settings.ScrollBarThickness =
+	4
+
+Settings.CanvasSize =
+	UDim2.new(0,0,0,2100)
+
+Settings.Parent =
+	Main
+
+--==============================================================
+-- PRESETS PAGE
+--==============================================================
+
+local Presets =
+	Instance.new("ScrollingFrame")
+
+Presets.Size =
+	UDim2.new(1,-20,1,-98)
+
+Presets.Position =
+	UDim2.new(0,10,0,94)
+
+Presets.BackgroundTransparency =
+	1
+
+Presets.BorderSizePixel =
+	0
+
+Presets.ScrollBarThickness =
+	4
+
+Presets.CanvasSize =
+	UDim2.new(0,0,0,500)
+
+Presets.Visible =
+	false
+
+Presets.Parent =
+	Main
+
+--==============================================================
+-- SECTION
+--==============================================================
+
+local function Section(
+	parent,
+	text,
+	y
+)
+
+	local label =
+		Instance.new("TextLabel")
+
+	label.Size =
+		UDim2.new(1,0,0,28)
+
+	label.Position =
+		UDim2.new(0,0,0,y)
+
+	label.BackgroundTransparency =
+		1
+
+	label.Text =
+		text
+
+	label.TextColor3 =
+		Color3.fromRGB(
+			215,
+			120,
+			255
+		)
+
+	label.TextSize =
+		13
+
+	label.Font =
+		Enum.Font.GothamBold
+
+	label.TextXAlignment =
+		Enum.TextXAlignment.Left
+
+	label.Parent =
+		parent
+
+	return label
+end
+
+--==============================================================
+-- TOGGLE
+--==============================================================
+
+local function Toggle(
+	parent,
+	text,
+	y,
+	getter,
+	setter,
+	callback
+)
+
+	local button =
+		Instance.new("TextButton")
+
+	button.Size =
+		UDim2.new(1,0,0,40)
+
+	button.Position =
+		UDim2.new(0,0,0,y)
+
+	button.BorderSizePixel =
+		0
+
+	button.TextSize =
+		12
+
+	button.Font =
+		Enum.Font.GothamBold
+
+	button.TextColor3 =
+		Color3.new(1,1,1)
+
+	button.Parent =
+		parent
+
+	local corner =
+		Instance.new("UICorner")
+
+	corner.CornerRadius =
+		UDim.new(0,10)
+
+	corner.Parent =
+		button
+
+	local function Refresh()
+
+		if getter() then
+
+			button.Text =
+				"🟢 "..text.." : ON"
+
+			button.BackgroundColor3 =
+				Color3.fromRGB(
+					60,30,78
+				)
+
+		else
+
+			button.Text =
+				"🔴 "..text.." : OFF"
+
+			button.BackgroundColor3 =
+				Color3.fromRGB(
+					26,20,31
+				)
+
+		end
+
+	end
+
+	Refresh()
+
+	button.MouseButton1Click:Connect(function()
+
+		setter(
+			not getter()
+		)
+
+		Refresh()
+
+		if callback then
+			callback()
+		end
+
+	end)
+
+	return button
+end
+
+--==============================================================
+-- NUMBER INPUT
+--==============================================================
+
+local function Input(
+	parent,
+	text,
+	y,
+	key,
+	minValue,
+	maxValue,
+	callback
+)
+
+	local holder =
+		Instance.new("Frame")
+
+	holder.Size =
+		UDim2.new(1,0,0,45)
+
+	holder.Position =
+		UDim2.new(0,0,0,y)
+
+	holder.BackgroundColor3 =
+		Color3.fromRGB(
+			22,18,28
+		)
+
+	holder.BorderSizePixel =
+		0
+
+	holder.Parent =
+		parent
+
+	local corner =
+		Instance.new("UICorner")
+
+	corner.CornerRadius =
+		UDim.new(0,10)
+
+	corner.Parent =
+		holder
+
+	local label =
+		Instance.new("TextLabel")
+
+	label.Size =
+		UDim2.new(0.62,0,1,0)
+
+	label.Position =
+		UDim2.new(0,10,0,0)
+
+	label.BackgroundTransparency =
+		1
+
+	label.Text =
+		text
+
+	label.TextColor3 =
+		Color3.fromRGB(
+			225,225,230
+		)
+
+	label.TextSize =
+		11
+
+	label.Font =
+		Enum.Font.GothamBold
+
+	label.TextXAlignment =
+		Enum.TextXAlignment.Left
+
+	label.Parent =
+		holder
+
+	local box =
+		Instance.new("TextBox")
+
+	box.Size =
+		UDim2.new(0.31,0,0,32)
+
+	box.Position =
+		UDim2.new(0.66,0,0.5,-16)
+
+	box.BackgroundColor3 =
+		Color3.fromRGB(
+			8,7,11
+		)
+
+	box.Text =
+		tostring(Config[key])
+
+	box.TextColor3 =
+		Color3.new(1,1,1)
+
+	box.TextSize =
+		11
+
+	box.Font =
+		Enum.Font.GothamBold
+
+	box.ClearTextOnFocus =
+		false
+
+	box.BorderSizePixel =
+		0
+
+	box.Parent =
+		holder
+
+	local bc =
+		Instance.new("UICorner")
+
+	bc.CornerRadius =
+		UDim.new(0,8)
+
+	bc.Parent =
+		box
+
+	box.FocusLost:Connect(function()
+
+		local value =
+			tonumber(box.Text)
+
+		if not value then
+
+			box.Text =
+				tostring(Config[key])
+
+			return
+		end
+
+		value =
+			math.clamp(
+				value,
+				minValue,
+				maxValue
+			)
+
+		Config[key] =
+			value
+
+		box.Text =
+			tostring(value)
+
+		print(
+			"[HYBRID RTX]",
+			key,
+			"=",
+			value
+		)
+
+		if Config.Enabled then
+			ApplyEffects()
+		end
+
+		if callback then
+			callback()
+		end
+
+	end)
+
+	return box
+end
+
+--==============================================================
+-- BUILD SETTINGS
+--==============================================================
+
+local Y = 0
+
+Section(
+	Settings,
+	"🪞 HYBRID REFLECTION",
+	Y
+)
+
+Y += 31
+
+Toggle(
+	Settings,
+	"REFLECTION",
+	Y,
+	function()
+		return Config.ReflectionEnabled
+	end,
+	function(v)
+		Config.ReflectionEnabled = v
+	end,
+	function()
+		if Config.Enabled then
+			ApplyEffects()
+		end
+	end
+)
+
+Y += 45
+
+Toggle(
+	Settings,
+	"SSR STYLE",
+	Y,
+	function()
+		return Config.SSRStyle
+	end,
+	function(v)
+		Config.SSRStyle = v
+	end
+)
+
+Y += 45
+
+Toggle(
+	Settings,
+	"METAL SURFACES",
+	Y,
+	function()
+		return Config.MetalMode
+	end,
+	function(v)
+		Config.MetalMode = v
+	end
+)
+
+Y += 45
+
+Toggle(
+	Settings,
+	"SMOOTH SURFACES",
+	Y,
+	function()
+		return Config.SmoothMode
+	end,
+	function(v)
+		Config.SmoothMode = v
+	end
+)
+
+Y += 45
+
+Toggle(
+	Settings,
+	"GLASS MODE",
+	Y,
+	function()
+		return Config.GlassMode
+	end,
+	function(v)
+		Config.GlassMode = v
+	end
+)
+
+Y += 55
+
+Section(
+	Settings,
+	"💎 REFLECTION POWER",
+	Y
+)
+
+Y += 30
+
+Input(
+	Settings,
+	"Environment Specular",
+	Y,
+	"EnvironmentSpecular",
+	0,
+	1
+)
+
+Y += 50
+
+Input(
+	Settings,
+	"Environment Diffuse",
+	Y,
+	"EnvironmentDiffuse",
+	0,
+	1
+)
+
+Y += 50
+
+Input(
+	Settings,
+	"Floor Reflection",
+	Y,
+	"FloorReflection",
+	0,
+	1
+)
+
+Y += 50
+
+Input(
+	Settings,
+	"Wall Reflection",
+	Y,
+	"WallReflection",
+	0,
+	1
+)
+
+Y += 50
+
+Input(
+	Settings,
+	"Object Reflection",
+	Y,
+	"ObjectReflection",
+	0,
+	1
+)
+
+Y += 60
+
+Section(
+	Settings,
+	"🔥 BLOOM",
+	Y
+)
+
+Y += 30
+
+Toggle(
+	Settings,
+	"BLOOM",
+	Y,
+	function()
+		return Config.BloomEnabled
+	end,
+	function(v)
+		Config.BloomEnabled = v
+	end
+)
+
+Y += 45
+
+Input(
+	Settings,
+	"Bloom Intensity",
+	Y,
+	"BloomIntensity",
+	0,
+	10
+)
+
+Y += 50
+
+Input(
+	Settings,
+	"Bloom Size",
+	Y,
+	"BloomSize",
+	0,
+	100
+)
+
+Y += 50
+
+Input(
+	Settings,
+	"Bloom Threshold",
+	Y,
+	"BloomThreshold",
+	0,
+	10
+)
+
+Y += 60
+
+Section(
+	Settings,
+	"🌈 COLOR",
+	Y
+)
+
+Y += 30
+
+Input(
+	Settings,
+	"Brightness",
+	Y,
+	"Brightness",
+	-1,
+	1
+)
+
+Y += 50
+
+Input(
+	Settings,
+	"Contrast",
+	Y,
+	"Contrast",
+	-1,
+	3
+)
+
+Y += 50
+
+Input(
+	Settings,
+	"Saturation",
+	Y,
+	"Saturation",
+	-1,
+	3
+)
+
+Y += 50
+
+Input(
+	Settings,
+	"Exposure",
+	Y,
+	"Exposure",
+	-5,
+	5
+)
+
+Y += 60
+
+Section(
+	Settings,
+	"🌞 SUN RAYS",
+	Y
+)
+
+Y += 30
+
+Toggle(
+	Settings,
+	"SUN RAYS",
+	Y,
+	function()
+		return Config.SunEnabled
+	end,
+	function(v)
+		Config.SunEnabled = v
+	end
+)
+
+Y += 45
+
+Input(
+	Settings,
+	"Sun Intensity",
+	Y,
+	"SunIntensity",
+	0,
+	1
+)
+
+Y += 50
+
+Input(
+	Settings,
+	"Sun Spread",
+	Y,
+	"SunSpread",
+	0,
+	1
+)
+
+Y += 60
+
+Section(
+	Settings,
+	"🌫️ ATMOSPHERE",
+	Y
+)
+
+Y += 30
+
+Toggle(
+	Settings,
+	"ATMOSPHERE",
+	Y,
+	function()
+		return Config.AtmosphereEnabled
+	end,
+	function(v)
+		Config.AtmosphereEnabled = v
+	end
+)
+
+Y += 45
+
+Input(
+	Settings,
+	"Density",
+	Y,
+	"AtmosphereDensity",
+	0,
+	1
+)
+
+Y += 50
+
+Input(
+	Settings,
+	"Haze",
+	Y,
+	"AtmosphereHaze",
+	0,
+	10
+)
+
+Y += 50
+
+Input(
+	Settings,
+	"Glare",
+	Y,
+	"AtmosphereGlare",
+	0,
+	10
+)
+
+Y += 60
+
+Section(
+	Settings,
+	"📷 DEPTH OF FIELD",
+	Y
+)
+
+Y += 30
+
+Toggle(
+	Settings,
+	"DEPTH OF FIELD",
+	Y,
+	function()
+		return Config.DOFEnabled
+	end,
+	function(v)
+		Config.DOFEnabled = v
+	end
+)
+
+Y += 45
+
+Input(
+	Settings,
+	"Near Intensity",
+	Y,
+	"DOFNearIntensity",
+	0,
+	1
+)
+
+Y += 50
+
+Input(
+	Settings,
+	"Far Intensity",
+	Y,
+	"DOFFarIntensity",
+	0,
+	1
+)
+
+Y += 50
+
+Input(
+	Settings,
+	"Focus Distance",
+	Y,
+	"DOFFocusDistance",
+	0,
+	1000
+)
+
+Y += 50
+
+Input(
+	Settings,
+	"Focus Radius",
+	Y,
+	"DOFRadius",
+	0,
+	100
+)
+
+Y += 60
+
+Section(
+	Settings,
+	"⚡ PERFORMANCE",
+	Y
+)
+
+Y += 30
+
+Input(
+	Settings,
+	"Update Interval",
+	Y,
+	"UpdateInterval",
+	0.1,
+	60
+)
+
+Y += 50
+
+Input(
+	Settings,
+	"Max Parts",
+	Y,
+	"MaxProcessedParts",
+	100,
+	10000
+)
+
+Y += 65
+
+--==============================================================
+-- APPLY
+--==============================================================
+
+local Apply =
+	Instance.new("TextButton")
+
+Apply.Size =
+	UDim2.new(1,0,0,48)
+
+Apply.Position =
+	UDim2.new(0,0,0,Y)
+
+Apply.BackgroundColor3 =
+	Color3.fromRGB(
+		95,30,125
+	)
+
+Apply.Text =
+	"🔥 APPLY HYBRID RTX"
+
+Apply.TextColor3 =
+	Color3.new(1,1,1)
+
+Apply.TextSize =
+	14
+
+Apply.Font =
+	Enum.Font.GothamBold
+
+Apply.BorderSizePixel =
+	0
+
+Apply.Parent =
+	Settings
+
+local ApplyCorner =
+	Instance.new("UICorner")
+
+ApplyCorner.CornerRadius =
+	UDim.new(0,12)
+
+ApplyCorner.Parent =
+	Apply
+
+Apply.MouseButton1Click:Connect(function()
+
+	if Config.Enabled then
+
+		ApplyEffects()
+		ProcessWorld()
+
+	else
+
+		EnableShaders()
+
+	end
+
+end)
+
+Y += 58
+
+--==============================================================
+-- DISABLE
+--==============================================================
+
+local Disable =
+	Instance.new("TextButton")
+
+Disable.Size =
+	UDim2.new(1,0,0,48)
+
+Disable.Position =
+	UDim2.new(0,0,0,Y)
+
+Disable.BackgroundColor3 =
+	Color3.fromRGB(
+		65,25,35
+	)
+
+Disable.Text =
+	"❌ RESTORE ORIGINAL"
+
+Disable.TextColor3 =
+	Color3.new(1,1,1)
+
+Disable.TextSize =
+	13
+
+Disable.Font =
+	Enum.Font.GothamBold
+
+Disable.BorderSizePixel =
+	0
+
+Disable.Parent =
+	Settings
+
+local DisableCorner =
+	Instance.new("UICorner")
+
+DisableCorner.CornerRadius =
+	UDim.new(0,12)
+
+DisableCorner.Parent =
+	Disable
+
+Disable.MouseButton1Click:Connect(
+	DisableShaders
+)
+
+Y += 65
+
+Settings.CanvasSize =
+	UDim2.new(
+		0,0,
+		0,Y
+	)
+
+--==============================================================
+-- PRESET BUTTON
+--==============================================================
+
+local function PresetButton(
+	text,
+	y,
+	callback
+)
+
+	local button =
+		Instance.new("TextButton")
+
+	button.Size =
+		UDim2.new(1,0,0,58)
+
+	button.Position =
+		UDim2.new(0,0,0,y)
+
+	button.BackgroundColor3 =
+		Color3.fromRGB(
+			28,20,36
+		)
+
+	button.Text =
+		text
+
+	button.TextColor3 =
+		Color3.new(1,1,1)
+
+	button.TextSize =
+		14
+
+	button.Font =
+		Enum.Font.GothamBold
+
+	button.BorderSizePixel =
+		0
+
+	button.Parent =
+		Presets
+
+	local corner =
+		Instance.new("UICorner")
+
+	corner.CornerRadius =
+		UDim.new(0,12)
+
+	corner.Parent =
+		button
+
+	button.MouseButton1Click:Connect(
+		callback
+	)
+
+	return button
+end
+
+PresetButton(
+	"💎 RTX HYBRID",
+	0,
+	PresetRTX
+)
+
+PresetButton(
+	"🪞 MAX MIRROR",
+	68,
+	PresetMirror
+)
+
+PresetButton(
+	"🔥 TIKTOK ULTRA",
+	136,
+	PresetTikTok
+)
+
+PresetButton(
+	"🧊 GLASS WORLD",
+	204,
+	PresetGlass
+)
+
+PresetButton(
+	"🌙 NIGHT RTX",
+	272,
+	PresetNight
+)
+
+local PresetInfo =
+	Instance.new("TextLabel")
+
+PresetInfo.Size =
+	UDim2.new(1,0,0,145)
+
+PresetInfo.Position =
+	UDim2.new(0,0,0,350)
+
+PresetInfo.BackgroundTransparency =
+	1
+
+PresetInfo.Text =
+	"HYBRID REFLECTION\n\n" ..
+	"Environment reflections\n" ..
+	"Metal / Smooth surfaces\n" ..
+	"Strong Bloom\n" ..
+	"Cinematic Color\n" ..
+	"Sun Rays + Atmosphere\n" ..
+	"Mobile friendly"
+
+PresetInfo.TextColor3 =
+	Color3.fromRGB(
+		180,180,195
+	)
+
+PresetInfo.TextSize =
+	13
+
+PresetInfo.Font =
+	Enum.Font.Gotham
+
+PresetInfo.TextWrapped =
+	true
+
+PresetInfo.Parent =
+	Presets
+
+--==============================================================
+-- TAB SWITCH
+--==============================================================
+
+SettingsTab.MouseButton1Click:Connect(function()
+
+	Settings.Visible =
+		true
+
+	Presets.Visible =
+		false
+
+	SettingsTab.BackgroundColor3 =
+		Color3.fromRGB(
+			80,25,110
+		)
+
+	PresetsTab.BackgroundColor3 =
+		Color3.fromRGB(
+			28,20,36
+		)
+
+end)
+
+PresetsTab.MouseButton1Click:Connect(function()
+
+	Settings.Visible =
+		false
+
+	Presets.Visible =
+		true
+
+	SettingsTab.BackgroundColor3 =
+		Color3.fromRGB(
+			28,20,36
+		)
+
+	PresetsTab.BackgroundColor3 =
+		Color3.fromRGB(
+			80,25,110
+		)
+
+end)
+
+--==============================================================
+-- OPEN
+--==============================================================
+
+Open.MouseButton1Click:Connect(function()
+
+	Main.Visible =
+		not Main.Visible
+
+end)
+
+Close.MouseButton1Click:Connect(function()
+
+	Main.Visible =
+		false
+
+end)
+
+--==============================================================
+-- DRAG MOBILE
+--==============================================================
+
+local dragging =
+	false
+
+local dragStart =
+	nil
+
+local startPosition =
+	nil
+
+Title.InputBegan:Connect(function(input)
+
+	if input.UserInputType ==
+		Enum.UserInputType.Touch
+		or input.UserInputType ==
+		Enum.UserInputType.MouseButton1 then
+
+		dragging =
+			true
+
+		dragStart =
+			input.Position
+
+		startPosition =
+			Main.Position
+
+		input.Changed:Connect(function()
+
+			if input.UserInputState ==
+				Enum.UserInputState.End then
+
+				dragging =
+					false
+
+			end
+
+		end)
+
+	end
+
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+
+	if not dragging then
+		return
+	end
+
+	if input.UserInputType ==
+		Enum.UserInputType.Touch
+		or input.UserInputType ==
+		Enum.UserInputType.MouseMovement then
+
+		local delta =
+			input.Position -
+			dragStart
+
+		Main.Position =
+			UDim2.new(
+				startPosition.X.Scale,
+				startPosition.X.Offset + delta.X,
+				startPosition.Y.Scale,
+				startPosition.Y.Offset + delta.Y
+			)
+
+	end
+
+end)
+
+--==============================================================
+-- AUTO UPDATE
+--==============================================================
+
+task.spawn(function()
+
+	while Gui.Parent do
+
+		if Config.Enabled then
+
+			local interval =
+				math.clamp(
+					tonumber(
+						Config.UpdateInterval
+					) or 1,
+					0.1,
+					60
+				)
+
+			task.wait(interval)
+
+			if Config.Enabled then
+
+				pcall(function()
+					ProcessWorld()
+				end)
+
+			end
+
+		else
+
+			task.wait(0.5)
+
+		end
+
+	end
+
+end)
+
+--==============================================================
+-- OPEN BUTTON ANIMATION
+--==============================================================
+
+task.spawn(function()
+
+	while Gui.Parent do
+
+		pcall(function()
+
+			TweenService:Create(
+				OpenStroke,
+				TweenInfo.new(
+					0.7,
+					Enum.EasingStyle.Sine,
+					Enum.EasingDirection.InOut
+				),
+				{
+					Thickness = 4
+				}
+			):Play()
+
+			task.wait(0.7)
+
+			TweenService:Create(
+				OpenStroke,
+				TweenInfo.new(
+					0.7,
+					Enum.EasingStyle.Sine,
+					Enum.EasingDirection.InOut
+				),
+				{
+					Thickness = 2
+				}
+			):Play()
+
+		end)
+
+		task.wait(0.7)
+
+	end
+
+end)
+
+--==============================================================
+-- INITIAL
+--==============================================================
+
+print("[HYBRID RTX] Creating UI...")
+
+-- Сразу включаем RTX-предустановку.
+-- Если не хочешь автоматического включения,
+-- замени PresetRTX() внизу на ничего.
+PresetRTX()
+
+print("================================================")
+print("[HYBRID RTX v9] READY")
+print("[HYBRID RTX] Reflection      : READY")
+print("[HYBRID RTX] SSR STYLE       : READY")
+print("[HYBRID RTX] Environment IBL : READY")
+print("[HYBRID RTX] Metal surfaces  : READY")
+print("[HYBRID RTX] Bloom           : READY")
+print("[HYBRID RTX] Color           : READY")
+print("[HYBRID RTX] Sun Rays        : READY")
+print("[HYBRID RTX] Atmosphere      : READY")
+print("[HYBRID RTX] DOF             : READY")
+print("[HYBRID RTX] Mobile UI       : READY")
+print("================================================")
